@@ -1,69 +1,64 @@
-name: Build R-MoE Binaries
+name: Build and Release R-MoE
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
+    tags:
+      - "v*" # උදා: v0.91, v1.0.0 වගේ tag එකක් push කරපු ගමන් වැඩේ පටන් ගන්නවා
 
 jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # Bot එකට Release එකක් හදන්න අවසර දෙනවා
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Configure (Unix)
-        if: runner.os != 'Windows'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (Unix)
-        if: runner.os != 'Windows'
-        run: cmake --build build --config Release -j 4
-
-      - name: Configure (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cmake --build build --config Release
-
-      - name: Package binary (Linux)
+      - name: Configure & Build (Linux)
         if: runner.os == 'Linux'
         run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j 4
           mkdir -p dist
           cp build/rmoe_engine dist/rmoe_engine-linux
 
-      - name: Package binary (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p dist
-          cp build/rmoe_engine dist/rmoe_engine-macos
-
-      - name: Package binary (Windows)
+      - name: Configure & Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+          New-Item -ItemType Directory -Force -Path dist
+          # Build artifacts කොහේ තිබුණත් dist එකට ගන්නවා
           if (Test-Path "build/Release/rmoe_engine.exe") {
             Copy-Item "build/Release/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
-          } elseif (Test-Path "build/rmoe_engine.exe") {
-            Copy-Item "build/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
           } else {
-            throw "rmoe_engine.exe not found"
+            Copy-Item "build/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
           }
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Auto-Release by GitHub Bot
+        uses: softprops/action-gh-release@v2
         with:
-          name: rmoe_engine-${{ runner.os }}
-          path: dist/*
-          if-no-files-found: error
+          files: dist/*
+          name: R-MoE Version ${{ github.ref_name }}
+          body: |
+            ### 🩺 R-MoE Diagnostic Engine (v0.1)
+            Automated Build by GitHub Actions Bot.
+            
+            **Included Binaries:**
+            - Linux (Ubuntu)
+            - Windows (x64)
+            
+            **Commit:** ${{ github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # මෙන්න Bot එක පාවිච්චි කරන Token එක
