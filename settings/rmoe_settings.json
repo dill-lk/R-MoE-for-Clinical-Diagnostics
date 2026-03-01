@@ -1,0 +1,8 @@
+{
+  "vision_proj_model": "models/vision_proj.gguf",
+  "vision_text_model": "models/vision_text.gguf",
+  "reasoning_model": "models/reasoning_expert.gguf",
+  "clinical_model": "models/clinical_expert.gguf",
+  "max_iterations": 3,
+  "confidence_threshold": 0.90
+}
