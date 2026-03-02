@@ -21,6 +21,12 @@ import subprocess
 import sys
 from typing import Optional
 
+# ── Image upload helper ───────────────────────────────────────────────────────
+try:
+    from image_handler import upload_patient_image as _upload_patient_image
+except ImportError:
+    _upload_patient_image = None  # type: ignore[assignment]
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DRIVE_DIR        = "/content/drive/MyDrive/Medical_MoE_Models"
 LOCAL_MODELS_DIR = "/content/models"
@@ -214,7 +220,13 @@ def run_python_engine(
     if REPO_DIR not in sys.path:
         sys.path.insert(0, REPO_DIR)
 
-    image = image or os.path.join(LOCAL_MODELS_DIR, "test_patient.png")
+    # ── Obtain patient image ──────────────────────────────────────────────────
+    if image is None:
+        if _upload_patient_image is not None:
+            image = _upload_patient_image(dest_dir=LOCAL_MODELS_DIR)
+        if image is None:
+            print("🛑 No patient image available. Upload an image and try again.")
+            return
 
     argv = [
         "--image",       image,

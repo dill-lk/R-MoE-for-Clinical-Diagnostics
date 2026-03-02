@@ -84,12 +84,39 @@ from colab_runner import setup_environment
 setup_environment()
 ```
 
-### Cell 5 — Run R-MoE (full demo with all charts)
+### Cell 5 — Upload Patient Image
+
+> **New in v2.0** — The pipeline now asks for the patient scan before it starts.
+> Run this cell to upload any PNG, JPEG, or DICOM file directly from your computer.
+> The image is saved to `/content/models/` and passed automatically to the engine.
+> Skip this cell only if `test_patient.png` is already on your Drive.
+
+```python
+import sys
+sys.path.insert(0, '/content/Mr.ToM')
+from image_handler import upload_patient_image
+
+# Opens a file-upload button in the cell output.
+# Click "Choose Files", select your X-ray / CT / DICOM scan, then wait for
+# the ✅ confirmation before running the next cell.
+image_path = upload_patient_image()
+print("Image ready:", image_path)
+```
+
+> **Alternatively**, if your scan is already on Google Drive you can skip this
+> cell and pass the path directly in Cell 6:
+> ```python
+> image_path = "/content/models/test_patient.png"
+> ```
+
+---
+
+### Cell 6 — Run R-MoE (full demo with all charts)
 ```python
 from colab_runner import run_python_engine
 
 run_python_engine(
-    image        = "/content/models/test_patient.png",
+    image        = image_path,   # set by Cell 5 (or hard-code a path)
     temperature  = 0.2,          # clinical precision temperature
     n_predict    = 512,
     n_gpu_layers = -1,            # -1 = full GPU offload (T4)
@@ -102,7 +129,7 @@ run_python_engine(
 )
 ```
 
-### Cell 6 — Interactive Doctor Q&A (post-diagnosis)
+### Cell 7 — Interactive Doctor Q&A (post-diagnosis)
 ```python
 from colab_runner import quick_interactive
 quick_interactive()
@@ -115,13 +142,13 @@ quick_interactive()
 #   "exit"                                → end session
 ```
 
-### Cell 7 — Benchmark comparison only (no models needed)
+### Cell 8 — Benchmark comparison only (no models needed)
 ```python
 from colab_runner import quick_benchmark
 quick_benchmark()
 ```
 
-### Cell 8 — Read audit trail
+### Cell 9 — Read audit trail
 ```python
 import json
 with open("audit_trail.json") as f:
@@ -133,7 +160,7 @@ for t in audit['trace']:
     print(f"  Iter {t['iteration']}: Sc={t['sc']:.4f}  Decision={t['decision']}")
 ```
 
-### Cell 9 — Read session report
+### Cell 10 — Read session report
 ```python
 with open("session_report.txt") as f:
     print(f.read())
