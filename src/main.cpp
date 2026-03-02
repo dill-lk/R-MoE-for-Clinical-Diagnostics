@@ -1,14 +1,110 @@
 #include "ExpertInterface.hpp"
+#include "CliOutput.hpp"
 
+#include <iomanip>
 #include <iostream>
 #include <string>
+
+#include <nlohmann/json.hpp>
 
 namespace {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  ./rmoe_engine --vision-proj <path> --vision-text <path> --reasoning <path> --clinical <path> --image <path> [--settings <json>]\n"
+        << "  ./rmoe_engine --vision-proj <path> --vision-text <path>"
+           " --reasoning <path> --clinical <path> --image <path> [--settings <json>]\n"
         << "  Optional: --chat-target reasoning|clinical\n";
+}
+
+// Display the final clinical report by parsing the JSON and printing key fields.
+void print_clinical_report(const std::string& report_json) {
+    using namespace rmoe::cli;
+    std::cout << '\n';
+    print_section("CLINICAL REPORT");
+    std::cout << '\n';
+    try {
+        const nlohmann::json rep = nlohmann::json::parse(report_json);
+
+        print_kv("Standard",   rep.value("standard",  "N/A"), kCyan);
+        print_kv("SNOMED CT",  rep.value("snomed_ct", "N/A"), kCyan);
+
+        if (rep.contains("risk_stratification")) {
+            const auto& rs = rep["risk_stratification"];
+            print_kv("TIRADS",   rs.value("tirads", "N/A"), kYellow);
+            print_kv("BI-RADS",  rs.value("birads", "N/A"), kYellow);
+        }
+
+        // Truncate narrative to keep terminal readable
+        std::string narr = rep.value("narrative", "N/A");
+        if (narr.size() > rmoe::cli::kMaxNarrativeLen) {
+            narr = narr.substr(0U, rmoe::cli::kMaxNarrativeLen) + " ...";
+        }
+        print_kv("Narrative",  narr);
+        print_kv("Treatment",  rep.value("treatment_recommendations", "N/A"));
+        print_kv("Summary",    rep.value("summary", "N/A"));
+
+        const bool hitl = rep.value("hitl_review_required", false);
+        print_kv("HITL Review", hitl ? "Required" : "Not required",
+                 hitl ? kRed : kGreen);
+        if (hitl && rep.contains("hitl_reason")) {
+            print_kv("HITL Reason", rep["hitl_reason"].get<std::string>(), kRed);
+        }
+    } catch (...) {
+        // Fallback: raw JSON (shouldn't happen in practice)
+        std::cout << kDim << report_json << rmoe::cli::kReset << '\n';
+    }
+    std::cout << '\n';
+    print_rule('=');
+}
+
+// Display the run summary + iteration trace table.
+void print_run_summary(const rmoe::RunSummary& summary, int max_iter) {
+    using namespace rmoe::cli;
+    std::cout << '\n';
+    print_section("DIAGNOSTIC RUN SUMMARY");
+    std::cout << '\n';
+
+    const char* status_color = summary.success ? kGreen : kRed;
+    const char* status_text  = summary.success
+        ? "SUCCESS"
+        : (summary.escalated_to_human ? "ESCALATED TO HUMAN" : "FAILED");
+
+    print_kv("Result",     status_text,  status_color);
+    print_kv("Escalated",  summary.escalated_to_human ? "Yes" : "No",
+             summary.escalated_to_human ? kYellow : kGreen);
+
+    std::ostringstream iters;
+    iters << summary.iterations_executed << " / " << max_iter;
+    print_kv("Iterations", iters.str(), kCyan);
+
+    if (!summary.trace.empty()) {
+        std::cout << '\n'
+                  << kDim << "  Iteration Trace\n" << kReset;
+        print_dash_rule();
+        std::cout
+                  << kBold << std::left
+                  << "   #   " << std::setw(26) << "Decision"
+                  << std::right
+                  << std::setw(10) << "Sc"
+                  << std::setw(10) << "sigma^2"
+                  << std::setw(10) << "H"
+                  << kReset << '\n';
+        print_dash_rule();
+
+        for (const auto& t : summary.trace) {
+            const char* row_color = (t.metrics.confidence >= 0.90F) ? kGreen : kYellow;
+            std::cout << row_color << std::fixed << std::setprecision(4)
+                      << "   " << t.iteration << "   "
+                      << std::left << std::setw(26) << t.decision
+                      << std::right
+                      << std::setw(10) << t.metrics.confidence
+                      << std::setw(10) << t.metrics.ddx_variance
+                      << std::setw(10) << t.metrics.predictive_entropy
+                      << kReset << '\n';
+        }
+
+        print_dash_rule();
+    }
 }
 } // namespace
 
@@ -56,6 +152,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // ── Banner ───────────────────────────────────────────────────────────────
+    rmoe::cli::print_banner();
+
     rmoe::initialize_backend();
 
     rmoe::MrTom mr_tom(rmoe::WannaStateMachine(kHardLimitIterations, kThreshold));
@@ -72,29 +171,46 @@ int main(int argc, char** argv) {
 
     if (!settings_path.empty()) {
         if (!mr_tom.load_settings(settings_path)) {
-            std::cerr << "[settings] Failed to load settings JSON, continuing with CLI/default values.\n";
+            std::cerr << "[settings] Failed to load settings JSON, using defaults.\n";
         }
     }
 
-    const rmoe::RunSummary summary = mr_tom.process_patient_case(image_path);
-    std::cout << "[SUMMARY] success=" << summary.success
-              << " escalated=" << summary.escalated_to_human
-              << " iterations=" << summary.iterations_executed << '\n';
+    // ── Patient / gate info ──────────────────────────────────────────────────
+    rmoe::cli::print_input_info(image_path, kThreshold, kHardLimitIterations);
 
-    for (const auto& t : summary.trace) {
-        std::cout << "  - iter=" << t.iteration
-                  << " decision=" << t.decision
-                  << " Sc=" << t.metrics.confidence
-                  << " H=" << t.metrics.predictive_entropy << '\n';
+    // ── Run the pipeline ────────────────────────────────────────────────────
+    const rmoe::RunSummary summary = mr_tom.process_patient_case(image_path);
+
+    // ── Run summary + trace table ────────────────────────────────────────────
+    print_run_summary(summary, kHardLimitIterations);
+
+    // ── Clinical report ──────────────────────────────────────────────────────
+    if (!summary.final_report_json.empty()) {
+        print_clinical_report(summary.final_report_json);
+    } else {
+        std::cout << '\n';
+        rmoe::cli::print_rule('=');
     }
 
-    std::cout << "\n--- DIAGNOSIS COMPLETE ---\n";
-    std::cout << "Doctor, do you have any follow-up questions? (type 'exit' to quit)\n";
+    // ── Interactive doctor chat ──────────────────────────────────────────────
+    const char* expert_label = (chat_target == rmoe::ExpertTarget::Clinical)
+        ? "CSR  (clinical report)" : "ARLL (diagnostic reasoning)";
+    std::cout
+        << '\n'
+        << rmoe::cli::kDim
+        << "  Follow-up questions available  |  Expert: " << expert_label
+        << "  |  Type 'exit' to quit\n"
+        << rmoe::cli::kReset;
+    rmoe::cli::print_rule();
 
     std::string doctor_query;
     while (true) {
-        std::cout << "\n[DOCTOR]: ";
-        std::getline(std::cin, doctor_query);
+        std::cout << '\n' << rmoe::cli::kGreen << rmoe::cli::kBold
+                  << "  [DOCTOR]  " << rmoe::cli::kReset;
+        std::cout.flush();
+        if (!std::getline(std::cin, doctor_query)) {
+            break; // EOF — exit gracefully (subprocess use)
+        }
         if (doctor_query == "exit") {
             break;
         }
@@ -103,8 +219,15 @@ int main(int argc, char** argv) {
         }
 
         const std::string response = mr_tom.ask_expert(doctor_query, chat_target);
-        std::cout << "[Mr.ToM]: " << response << '\n';
+        std::cout << rmoe::cli::kCyan << "  [Mr.ToM]  "
+                  << rmoe::cli::kReset << response << '\n';
     }
+
+    std::cout << '\n';
+    rmoe::cli::print_rule();
+    std::cout << rmoe::cli::kDim << "  Session closed.\n" << rmoe::cli::kReset;
+    rmoe::cli::print_rule();
+    std::cout << '\n';
 
     rmoe::shutdown_backend();
     return 0;
