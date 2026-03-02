@@ -18,6 +18,20 @@ struct FeedbackTensor {
     std::string payload;
 };
 
+// Inference hyperparameters forwarded to llama.cpp context and sampler chain.
+// Populated from CLI defaults, settings JSON, or per-expert overrides.
+struct InferenceParams {
+    int     n_ctx           {4096}; // KV-cache context window (tokens)
+    int     n_threads       {4};    // decode threads
+    int     n_threads_batch {4};    // prompt-eval threads
+    int     max_new_tokens  {128};  // default generation budget (-1 = use this value)
+    float   temperature     {0.2F}; // sampling temperature (paper: 0.2 for clinical precision)
+    int32_t top_k           {40};   // top-k filter (paper CLI: --top_k 40)
+    float   top_p           {0.95F};// nucleus probability threshold
+    float   repeat_penalty  {1.1F}; // repetition penalty multiplier
+    int32_t penalty_last_n  {64};   // window of tokens considered for repetition penalty
+};
+
 struct DiagnosticData {
     ConfidenceScore sc {0.0F};
     std::string analysis;
@@ -51,9 +65,10 @@ struct RunSummary {
 
 struct ModelSettings {
     std::string vision_projection_model {"models/vision_proj.gguf"};
-    std::string vision_text_model {"models/vision_text.gguf"};
-    std::string reasoning_model {"models/reasoning_expert.gguf"};
-    std::string clinical_model {"models/clinical_expert.gguf"};
+    std::string vision_text_model       {"models/vision_text.gguf"};
+    std::string reasoning_model         {"models/reasoning_expert.gguf"};
+    std::string clinical_model          {"models/clinical_expert.gguf"};
+    InferenceParams inference           {};
 };
 
 class IClinicalExpert {
@@ -110,8 +125,14 @@ public:
     ~ExpertSwapper();
 
     void unload_current_expert();
-    bool load_expert_model(const std::string& model_path, int n_ctx = 2048);
-    [[nodiscard]] std::string infer_text(const std::string& prompt, int max_new_tokens = 32) const;
+    bool load_expert_model(const std::string& model_path, const InferenceParams& params = {});
+
+    // Infer using a system prompt and user input.
+    // Applies the model's chat template (llama mode) or returns a mock response.
+    // max_new_tokens overrides InferenceParams::max_new_tokens when > 0.
+    [[nodiscard]] std::string infer_text(const std::string& system_prompt,
+                                         const std::string& user_input,
+                                         int max_new_tokens = -1) const;
 
 private:
     struct Impl;
