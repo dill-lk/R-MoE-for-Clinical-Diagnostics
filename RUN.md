@@ -266,7 +266,7 @@ rmoe/
 @article{rmoe2025,
   title   = {Recursive Multi-Agent Mixture-of-Experts (RMoE)
              for Autonomous Clinical Diagnostics},
-  year    = {2025},
+  year    = {2026},
   note    = {Open-source implementation at github.com/dill-lk/Mr.ToM}
 }
 ```
