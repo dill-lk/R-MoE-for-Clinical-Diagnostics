@@ -24,6 +24,7 @@ MyDrive/
 ## 🤖 Recommended Models for T4 GPU (16 GB VRAM)
 
 > All models run **one at a time** via `ExpertSwapper` — peak VRAM usage < 4 GB per phase.
+> you can use and copy our models below from Drive also https://drive.google.com/drive/folders/1NbTL4BFFrySVmFt05wEh-B1q3mqLE3C5
 
 | Role | Model | File to rename | Size | Download |
 |------|-------|----------------|------|----------|
