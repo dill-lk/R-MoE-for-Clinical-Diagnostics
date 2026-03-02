@@ -25,6 +25,7 @@ void print_usage() {
         << "    --settings <json> : JSON settings file\n"
         << "    --temp    <f>     : sampling temperature (default 0.2)\n"
         << "    --n-predict <n>   : max tokens to generate (default 128)\n"
+        << "    --n-gpu-layers <n>: layers to offload to GPU (0=CPU only, 99=offload all layers)\n"
         << "    --chat-target reasoning|clinical\n";
 }
 
@@ -132,6 +133,7 @@ int main(int argc, char** argv) {
     std::string settings_path;
     float       cli_temperature  = -1.0F; // <0 means "not set by CLI"
     int         cli_max_tokens   = -1;    // <0 means "not set by CLI"
+    int         cli_gpu_layers   = -1;    // <0 means "not set by CLI"
     rmoe::ExpertTarget chat_target = rmoe::ExpertTarget::Reasoning;
 
     for (int i = 1; i < argc; ++i) {
@@ -161,6 +163,12 @@ int main(int argc, char** argv) {
         } else if ((arg == "--n-predict" || arg == "--n_predict") && i + 1 < argc) {
             try {
                 cli_max_tokens = std::stoi(argv[++i]);
+            } catch (...) {
+                std::cerr << "[cli] Invalid value for " << arg << ": " << argv[i] << '\n';
+            }
+        } else if ((arg == "--n-gpu-layers" || arg == "--ngl") && i + 1 < argc) {
+            try {
+                cli_gpu_layers = std::stoi(argv[++i]);
             } catch (...) {
                 std::cerr << "[cli] Invalid value for " << arg << ": " << argv[i] << '\n';
             }
@@ -215,6 +223,9 @@ int main(int argc, char** argv) {
     }
     if (cli_max_tokens > 0) {
         mr_tom.set_max_tokens(cli_max_tokens);
+    }
+    if (cli_gpu_layers >= 0) {
+        mr_tom.set_gpu_layers(cli_gpu_layers);
     }
 
     // ── Patient / gate info ──────────────────────────────────────────────────

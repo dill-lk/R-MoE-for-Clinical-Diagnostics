@@ -5,6 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ── GPU / CUDA support ────────────────────────────────────────────────────────
+# Pass -DGGML_CUDA=ON (or LLAMA_CUDA=ON for older llama.cpp) to enable CUDA.
+# In Google Colab with a GPU runtime, build with:
+#   cmake -S /content/Mr.ToM -B /content/Mr.ToM/build \
+#         -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON
+#   cmake --build /content/Mr.ToM/build --config Release -j4
+# Then pass --n-gpu-layers 99 at runtime (or set n_gpu_layers=99 in settings).
+# ─────────────────────────────────────────────────────────────────────────────
+
 add_executable(rmoe_engine
     src/main.cpp
     src/DiagnosticEngine.cpp

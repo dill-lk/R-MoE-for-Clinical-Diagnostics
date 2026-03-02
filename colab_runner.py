@@ -24,7 +24,12 @@ Expected Drive layout:
 The engine binary is expected at:
   /content/Mr.ToM/build/rmoe_engine
 Build it first with:
+  # CPU-only build (no GPU):
   !cmake -S /content/Mr.ToM -B /content/Mr.ToM/build -DCMAKE_BUILD_TYPE=Release
+  !cmake --build /content/Mr.ToM/build --config Release -j4
+
+  # GPU build (requires CUDA toolkit on the runtime):
+  !cmake -S /content/Mr.ToM -B /content/Mr.ToM/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON
   !cmake --build /content/Mr.ToM/build --config Release -j4
 """
 
@@ -81,15 +86,18 @@ def setup_environment() -> bool:
 def run_engine(
     temperature: float = 0.6,
     n_predict: int = 512,
+    n_gpu_layers: int = 99,
     image: str = "models/test_patient.png",
 ) -> None:
     """Run the R-MoE diagnostic engine.
 
     Args:
-        temperature: Sampling temperature (default 0.6).
-        n_predict:   Maximum tokens to generate per inference step (default 512).
-        image:       Path to the patient image, relative to /content (default
-                     "models/test_patient.png").
+        temperature:  Sampling temperature (default 0.6).
+        n_predict:    Maximum tokens to generate per inference step (default 512).
+        n_gpu_layers: Number of model layers to offload to GPU (default 99 = full
+                      GPU offload).  Set to 0 to run on CPU only.
+        image:        Path to the patient image, relative to /content (default
+                      "models/test_patient.png").
     """
     if not setup_environment():
         print("🛑 Setup failed — check that all model files are on Drive.")
@@ -114,6 +122,7 @@ def run_engine(
         "--image",           image,
         "--temp",            str(temperature),
         "--n-predict",       str(n_predict),
+        "--n-gpu-layers",    str(n_gpu_layers),
     ]
 
     print("\n🚀 Launching R-MoE Engine...")

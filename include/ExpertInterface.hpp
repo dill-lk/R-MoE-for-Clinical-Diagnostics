@@ -30,6 +30,7 @@ struct InferenceParams {
     float   top_p           {0.95F};// nucleus probability threshold
     float   repeat_penalty  {1.1F}; // repetition penalty multiplier
     int32_t penalty_last_n  {64};   // window of tokens considered for repetition penalty
+    int     n_gpu_layers    {0};    // layers to offload to GPU (0 = CPU only, 99 = offload all layers)
 };
 
 struct DiagnosticData {
@@ -182,6 +183,7 @@ public:
 
     void set_temperature(float temperature);
     void set_max_tokens(int max_new_tokens);
+    void set_gpu_layers(int n_gpu_layers);
 
 private:
     WannaStateMachine state_machine_;

@@ -14,6 +14,7 @@
     "top_k": 40,
     "top_p": 0.95,
     "repeat_penalty": 1.1,
-    "penalty_last_n": 64
+    "penalty_last_n": 64,
+    "n_gpu_layers": 99
   }
 }

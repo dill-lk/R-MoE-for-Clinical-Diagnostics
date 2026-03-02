@@ -161,6 +161,7 @@ bool ExpertSwapper::load_expert_model(const std::string& model_path, const Infer
 
 #if RMOE_HAS_LLAMA
     llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = params.n_gpu_layers;
     impl_->model = llama_model_load_from_file(model_path.c_str(), model_params);
     if (impl_->model == nullptr) {
         std::cerr << "[llama.cpp] Failed loading model: " << model_path << '\n';
@@ -761,6 +762,10 @@ void MrTom::set_max_tokens(const int max_new_tokens) {
     settings_.inference.max_new_tokens = max_new_tokens;
 }
 
+void MrTom::set_gpu_layers(const int n_gpu_layers) {
+    settings_.inference.n_gpu_layers = n_gpu_layers;
+}
+
 void MrTom::configure_gate(const int max_iterations, const ConfidenceScore threshold) {
     state_machine_ = WannaStateMachine(max_iterations, threshold);
 }
@@ -807,6 +812,7 @@ bool MrTom::load_settings(const std::string& settings_json_path) {
         if (inf.contains("top_p"))            { settings_.inference.top_p            = inf["top_p"].get<float>();          }
         if (inf.contains("repeat_penalty"))   { settings_.inference.repeat_penalty   = inf["repeat_penalty"].get<float>(); }
         if (inf.contains("penalty_last_n"))   { settings_.inference.penalty_last_n   = inf["penalty_last_n"].get<int32_t>(); }
+        if (inf.contains("n_gpu_layers"))     { settings_.inference.n_gpu_layers     = inf["n_gpu_layers"].get<int>();     }
     }
 
     return true;
