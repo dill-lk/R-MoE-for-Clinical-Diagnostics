@@ -76,6 +76,29 @@ def _load_prompt(path: str, fallback: str) -> str:
         return fallback
 
 
+
+# Substrings that indicate an ARLL "diagnosis" field is model meta-commentary
+# rather than an actual medical condition name.
+_NON_CLINICAL_SUBSTRINGS = (
+    "sigma", " sc ", "sc is", "and sc", "so sc",
+    "let me", "want me", "break down",
+    "iteration", "phase ", "protocol",
+    "metric", "wanna", "shows a primary",
+    "it seems", "attn score", " roi ",
+)
+
+# Minimum character length for a string to be considered a medical diagnosis.
+_MIN_DIAGNOSIS_LENGTH = 4
+
+
+def _is_clinical_hypothesis(name: str) -> bool:
+    """Return True only if *name* looks like a real medical diagnosis."""
+    if len(name.strip()) < _MIN_DIAGNOSIS_LENGTH:
+        return False
+    low = name.lower()
+    return not any(s in low for s in _NON_CLINICAL_SUBSTRINGS)
+
+
 def _parse_arll_output(raw: str) -> ReasoningOutput:
     """Parse ARLL output.  Strict JSON first; regex fallback."""
     out = ReasoningOutput(raw_output=raw)
@@ -90,6 +113,7 @@ def _parse_arll_output(raw: str) -> ReasoningOutput:
                 evidence=str(item.get("evidence", "")),
             )
             for item in blob.get("ddx", [])
+            if _is_clinical_hypothesis(str(item.get("diagnosis", "")))
         ]
         if hyps:
             out.ensemble          = DDxEnsemble(hypotheses=hyps)
@@ -107,6 +131,8 @@ def _parse_arll_output(raw: str) -> ReasoningOutput:
     )
     regex_hyps: List[DDxHypothesis] = []
     for name, prob_str in pairs[:6]:
+        if not _is_clinical_hypothesis(name):
+            continue
         p = float(prob_str)
         if p > 1.0:
             p /= 100.0
@@ -279,12 +305,13 @@ class ExpertSwapper:
         if not _HAS_LLAMA_CPP or self._llm is None:
             return f"[mock] {self.model_name} | {user_input[:50]}…"
 
+        messages_with_system = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_input},
+        ]
         try:
             resp = self._llm.create_chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_input},
-                ],
+                messages=messages_with_system,
                 max_tokens=n_gen,
                 temperature=temp,
                 top_k=self._params.top_k,
@@ -293,6 +320,24 @@ class ExpertSwapper:
             )
             return resp["choices"][0]["message"].get("content") or ""
         except Exception as exc:
+            # Some models (e.g. MedGemma-2B) don't support the system role.
+            # Retry with the system prompt merged into the user message.
+            if "system role not supported" in str(exc).lower():
+                try:
+                    resp = self._llm.create_chat_completion(
+                        messages=[
+                            {"role": "user",
+                             "content": f"{system_prompt}\n\n{user_input}"},
+                        ],
+                        max_tokens=n_gen,
+                        temperature=temp,
+                        top_k=self._params.top_k,
+                        top_p=self._params.top_p,
+                        repeat_penalty=self._params.repeat_penalty,
+                    )
+                    return resp["choices"][0]["message"].get("content") or ""
+                except Exception as exc2:
+                    return f"[inference-error] {exc2}"
             return f"[inference-error] {exc}"
 
     def infer_with_image(
