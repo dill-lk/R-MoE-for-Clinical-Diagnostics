@@ -22,12 +22,15 @@ struct DiagnosticData {
     ConfidenceScore sc {0.0F};
     std::string analysis;
     FeedbackTensor feedback {};
+    // DDx ensemble probability samples used by ARLL to compute Sc = 1 - sigma^2
+    std::vector<float> ddx_probabilities;
 };
 
 struct UncertaintyMetrics {
     ConfidenceScore confidence {0.0F};
     float uncertainty {1.0F};
     float predictive_entropy {0.0F};
+    float ddx_variance {0.0F}; // sigma^2 in Sc = 1 - sigma^2 (ensemble DDx variance)
 };
 
 struct IterationTrace {

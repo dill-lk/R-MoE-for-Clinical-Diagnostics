@@ -85,6 +85,7 @@ int main(int argc, char** argv) {
         std::cout << "  - iter=" << t.iteration
                   << " decision=" << t.decision
                   << " Sc=" << t.metrics.confidence
+                  << " sigma2=" << t.metrics.ddx_variance
                   << " H=" << t.metrics.predictive_entropy << '\n';
     }
 
