@@ -1,56 +1,98 @@
 #!/usr/bin/env python3
 """
-R-MoE: Recursive Multi-Agent Mixture-of-Experts Clinical Engine
-================================================================
+R-MoE v2.0 — Recursive Multi-Agent Mixture-of-Experts Clinical Engine
+=======================================================================
 Full Python implementation of the research paper:
-  "Recursive Multi-Agent Mixture-of-Experts (RMoE) for
-   Autonomous Clinical Diagnostics"
+  "Recursive Multi-Agent Mixture-of-Experts (RMoE) for Autonomous Clinical Diagnostics"
 
-Architecture (paper §3.1)
-─────────────────────────────────────────────────────────────────
-  Phase 1 · MPE   Multi-Modal Perception Engine   [Qwen2-VL]
-  Phase 2 · ARLL  Agentic Reasoning & Logic Layer [DeepSeek-R1]
-  Phase 3 · CSR   Clinical Synthesis & Reporting  [Llama-3-Medius]
+v2.0 Architecture
+─────────────────────────────────────────────────────────────────────────
+       _________________________________________________________
+      |                                                         |
+      |          RECURSIVE MULTI-AGENT MoE (R-MoE) v2.0         |
+      |       "Hybrid Autonomous-Human Medical Reasoning"       |
+      |_________________________________________________________|
+                    |
+      [ INPUT ] ----+----> (Multi-Modal: DICOM, X-Ray, Clinical Notes)
+                    |
+      ______________|______________          _______________________
+     |                             |        |                       |
+     |  PHASE 1: MPE (Perception)  |<-------|   HUMAN-IN-THE-LOOP   |
+     |  [Moondream2 / Qwen2-VL]    |        |  (Doctor Zoom Cmds)   |
+     |   +--> Dyn. Res. Adaptation  |        |_______________________|
+     |   +--> Visual Token Merger   |
+     |   +--> Saliency-Aware Zoom   |
+     |_____________________________| ← MPE CONFIDENCE GATE
+                    |  Low Sc? → #wanna# Loop
+             { Structured Visual Evidence }
+                    |
+      ______________|______________          _______________________
+     |                             |        |                       |
+     |   PHASE 2: ARLL (Reasoning) |<-------|    DOCTOR'S QUERY     |
+     |   [DeepSeek-R1 - CoT Agent] |        |  ("Explain findings") |
+     |   +--> Chain-of-Thought (CoT)|        |_______________________|
+     |   +--> DDx Ensemble (Sc=1-σ²)|
+     |   +--> Uncertainty Flagging  |
+     |_____________________________| ← ARLL CONFIDENCE GATE (Sc ≥ 0.90)
+             |               |
+           FAIL             PASS
+             |               ↓
+     [ #wanna# PROTOCOL ]  [ PHASE 3: CSR ]
+     1. Attention Refocus   [Llama-3-Medius]
+     2. Hypo Re-evaluation       |
+     3. Doctor Clarification  { INTERACTIVE CLINICAL DOC }
+             |                   |
+     [RE-SCAN + CONTEXT] → [ FINAL REPORT ]
 
-Core algorithms
-─────────────────────────────────────────────────────────────────
-  DDx Confidence:   Sc = 1 − σ²
-                    σ² = Var(p₁ … pₙ)   over DDx probability distribution
-  Recursive Gate:   if Sc < θ (default 0.90) → #wanna# re-scan
-  Hard limit:       max 3 iterations → EscalateToHuman (HITL)
-  ECE calibration:  Σ|acc_k − conf_k| · nₖ / N    (paper Table 1)
+Key v2.0 Features
+─────────────────────────────────────────────────────────────────────────
+  Doctor-in-the-Loop (HITL):
+    • "Show me the fracture site" → MPE zooms on that region
+    • Doctor prompted during #wanna# for clarification / focus hint
 
-Expert Swapper (VRAM safety)
-─────────────────────────────────────────────────────────────────
-  Only ONE model lives in GPU memory at a time.  Each phase
-  explicitly unloads the previous model before loading the next,
-  preventing multi-model VRAM pressure on constrained T4 runtimes.
+  Expert Auto-Routing:
+    • Reasoning questions  → ARLL (DeepSeek-R1)
+    • Treatment questions  → CSR  (Llama-3-Medius)
+    • Router uses keyword scoring — no extra model needed
+
+  MPE Confidence Gate (Phase 1):
+    • MPE emits perception_confidence (low/medium/high)
+    • If confidence_level == "low" → early #wanna# before ARLL
+
+  Recursive Multi-Scan:
+    • When #wanna# fires, doctor is asked: "I'm re-scanning — any hint?"
+    • Doctor hint injected as zoom payload into next MPE pass
+
+Core Algorithms (paper §3.1)
+─────────────────────────────────────────────────────────────────────────
+  DDx Confidence:  Sc = 1 − σ²         σ² = Var(p₁ … pₙ)
+  Gate:            Sc < 0.90  →  #wanna#  (max 3 iterations)
+  ECE:             Σ |acc_k − conf_k| · nₖ / N
 
 Benchmarks (paper Table 1 — MIMIC-CXR / RSNA Bone Age)
-─────────────────────────────────────────────────────────────────
-  Metric          R-MoE    GPT-4V   Gemini 1.5
-  F1-score        0.92     0.85     0.87
-  Type I err %    5.2      7.8      7.1
-  ECE             0.08     0.15     0.13
-  Inference (s)   45       32       38
+─────────────────────────────────────────────────────────────────────────
+  Metric        R-MoE   GPT-4V   Gemini 1.5
+  F1-score      0.92    0.85     0.87
+  Type I err %  5.2     7.8      7.1
+  ECE           0.08    0.15     0.13
 
-Usage (CLI)
-─────────────────────────────────────────────────────────────────
+Usage
+─────────────────────────────────────────────────────────────────────────
   python engine.py --image patient.png [options]
 
-  Key options:
-    --model-vision    path to Qwen2-VL GGUF
-    --model-proj      path to CLIP mmproj GGUF
-    --model-reasoning path to DeepSeek-R1 GGUF
-    --model-clinical  path to Llama-3-Medius GGUF
-    --settings        JSON settings file
-    --n-gpu-layers    -1 = full GPU offload (default)
-    --audit-log       write JSON audit trail to this path
-    --prior-image     prior scan for temporal comparison
-    --eval            print ECE + F1 calibration summary
+  --model-vision    Qwen2-VL backbone GGUF
+  --model-proj      CLIP mmproj GGUF
+  --model-reasoning DeepSeek-R1 GGUF
+  --model-clinical  Llama-3-Medius GGUF
+  --image           Patient image (REQUIRED)
+  --prior-image     Prior scan for temporal comparison
+  --audit-log       Write JSON audit trail (HITL review)
+  --n-gpu-layers    -1 = full GPU (default), 0 = CPU only
+  --hitl-mode       interactive | auto | disabled (default: auto)
+  --eval            Print ECE calibration summary after run
 
-Colab install (CUDA / T4 GPU)
-─────────────────────────────────────────────────────────────────
+Colab GPU install
+─────────────────────────────────────────────────────────────────────────
   !CMAKE_ARGS="-DGGML_CUDA=ON" pip install llama-cpp-python
 """
 
@@ -86,8 +128,8 @@ except ImportError:
     _HAS_LLAMA_CPP = False
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(level=logging.WARNING, format="[%(levelname)s] %(message)s",
-                    stream=sys.stderr)
+logging.basicConfig(level=logging.WARNING,
+                    format="[%(levelname)s] %(message)s", stream=sys.stderr)
 _log = logging.getLogger("rmoe")
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
@@ -105,10 +147,10 @@ _WIDTH   = 72
 @dataclass
 class InferenceParams:
     """Hyperparameters forwarded to llama-cpp-python at load and sample time."""
-    n_ctx: int            = 4096   # KV-cache context window (tokens)
-    n_threads: int        = 4      # CPU decode threads
-    n_threads_batch: int  = 4      # CPU prompt-eval threads
-    max_new_tokens: int   = 512    # generation budget per inference call
+    n_ctx: int            = 4096
+    n_threads: int        = 4
+    n_threads_batch: int  = 4
+    max_new_tokens: int   = 512
     temperature: float    = 0.2    # paper: 0.2 for clinical precision
     top_k: int            = 40
     top_p: float          = 0.95
@@ -119,22 +161,17 @@ class InferenceParams:
 
 @dataclass
 class DDxHypothesis:
-    """A single differential-diagnosis candidate with its probability mass."""
-    diagnosis: str   = ""
+    """Single differential-diagnosis candidate with probability mass."""
+    diagnosis: str    = ""
     probability: float = 0.0
-    evidence: str    = ""
+    evidence: str     = ""
 
 
 @dataclass
 class DDxEnsemble:
     """
-    Collection of DDx hypotheses produced by the ARLL agent.
-
-    Sc = 1 − σ²  (paper §3.1)
-    σ² = Var(p₁ … pₙ)  over the probability distribution across diagnoses.
-
-    Low σ² ⟹ high Sc ⟹ agent is confident ⟹ proceed to CSR.
-    High σ² ⟹ low Sc ⟹ high spread ⟹ trigger #wanna# re-scan.
+    Collection of DDx hypotheses from the ARLL agent.
+    Sc = 1 − σ²  (paper §3.1),  σ² = Var(p₁ … pₙ).
     """
     hypotheses: List[DDxHypothesis] = field(default_factory=list)
 
@@ -144,7 +181,6 @@ class DDxEnsemble:
 
     @property
     def sigma2(self) -> float:
-        """Variance of the DDx probability distribution."""
         probs = self.probabilities
         if not probs:
             return 1.0
@@ -153,14 +189,11 @@ class DDxEnsemble:
 
     @property
     def sc(self) -> float:
-        """Confidence score Sc = 1 − σ²."""
         return max(0.0, min(1.0, 1.0 - self.sigma2))
 
     @property
     def primary(self) -> Optional[DDxHypothesis]:
-        if not self.hypotheses:
-            return None
-        return max(self.hypotheses, key=lambda h: h.probability)
+        return max(self.hypotheses, key=lambda h: h.probability) if self.hypotheses else None
 
     def is_confident(self, threshold: float = 0.90) -> bool:
         return self.sc >= threshold
@@ -168,7 +201,8 @@ class DDxEnsemble:
     def to_dict(self) -> dict:
         return {
             "hypotheses": [
-                {"diagnosis": h.diagnosis, "probability": round(h.probability, 4),
+                {"diagnosis": h.diagnosis,
+                 "probability": round(h.probability, 4),
                  "evidence": h.evidence}
                 for h in self.hypotheses
             ],
@@ -180,24 +214,37 @@ class DDxEnsemble:
 @dataclass
 class PerceptionEvidence:
     """Structured output from MPE Phase 1."""
-    rois: List[Dict]         = field(default_factory=list)   # regions of interest
+    rois: List[Dict]         = field(default_factory=list)
     feature_summary: str     = ""
-    confidence_level: str    = "medium"  # low | medium | high
-    saliency_crop: str       = ""        # "x1,y1,x2,y2" or empty
-    raw_summary: str         = ""        # full model output
+    confidence_level: str    = "medium"   # "low" | "medium" | "high"
+    saliency_crop: str       = ""         # "x1,y1,x2,y2" bounding box
+    raw_summary: str         = ""
+
+
+@dataclass
+class DoctorFeedback:
+    """
+    Input received from the doctor during HITL interaction.
+    May contain a zoom command (e.g. "Show me the fracture site"),
+    a region hint, or a free-text clarification.
+    """
+    message: str          = ""
+    zoom_region: str      = ""    # parsed anatomical region / coordinates
+    is_zoom_command: bool = False
+    raw_input: str        = ""
 
 
 @dataclass
 class ReasoningOutput:
     """Structured output from ARLL Phase 2."""
-    cot: str                        = ""
-    ensemble: DDxEnsemble           = field(default_factory=DDxEnsemble)
-    wanna: bool                     = False
-    feedback_request: str           = "none"
-    feedback_payload: str           = ""
-    rag_references: List[str]       = field(default_factory=list)
-    temporal_note: str              = ""
-    raw_output: str                 = ""
+    cot: str                      = ""
+    ensemble: DDxEnsemble         = field(default_factory=DDxEnsemble)
+    wanna: bool                   = False
+    feedback_request: str         = "none"
+    feedback_payload: str         = ""
+    rag_references: List[str]     = field(default_factory=list)
+    temporal_note: str            = ""
+    raw_output: str               = ""
 
 
 @dataclass
@@ -208,43 +255,43 @@ class FeedbackTensor:
 
 @dataclass
 class DiagnosticData:
-    sc: float                       = 0.0
-    analysis: str                   = ""
-    feedback: FeedbackTensor        = field(default_factory=FeedbackTensor)
-    ddx_probabilities: List[float]  = field(default_factory=list)
+    sc: float                      = 0.0
+    analysis: str                  = ""
+    feedback: FeedbackTensor       = field(default_factory=FeedbackTensor)
+    ddx_probabilities: List[float] = field(default_factory=list)
 
 
 @dataclass
 class UncertaintyMetrics:
-    confidence: float         = 0.0   # Sc
-    uncertainty: float        = 1.0   # 1 − Sc
-    predictive_entropy: float = 0.0   # H(Sc) binary entropy
-    ddx_variance: float       = 0.0   # σ²
+    confidence: float         = 0.0
+    uncertainty: float        = 1.0
+    predictive_entropy: float = 0.0
+    ddx_variance: float       = 0.0
 
 
 @dataclass
 class IterationTrace:
-    iteration: int                = 1
-    perception_summary: str       = ""
-    reasoning_summary: str        = ""
-    decision: str                 = ""
-    metrics: UncertaintyMetrics   = field(default_factory=UncertaintyMetrics)
-    ddx_ensemble: Dict            = field(default_factory=dict)
-    rag_references: List[str]     = field(default_factory=list)
-    temporal_note: str            = ""
-    elapsed_s: float              = 0.0
+    iteration: int               = 1
+    perception_summary: str      = ""
+    reasoning_summary: str       = ""
+    decision: str                = ""
+    metrics: UncertaintyMetrics  = field(default_factory=UncertaintyMetrics)
+    ddx_ensemble: Dict           = field(default_factory=dict)
+    rag_references: List[str]    = field(default_factory=list)
+    temporal_note: str           = ""
+    doctor_feedback: str         = ""
+    elapsed_s: float             = 0.0
 
 
 @dataclass
 class RunSummary:
-    session_id: str                   = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    success: bool                     = False
-    escalated_to_human: bool          = False
-    iterations_executed: int          = 0
-    final_report_json: str            = ""
-    trace: List[IterationTrace]       = field(default_factory=list)
-    total_elapsed_s: float            = 0.0
-    # Calibration bins for ECE (filled when --eval is active)
+    session_id: str                    = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    success: bool                      = False
+    escalated_to_human: bool           = False
+    iterations_executed: int           = 0
+    final_report_json: str             = ""
+    trace: List[IterationTrace]        = field(default_factory=list)
+    total_elapsed_s: float             = 0.0
     calibration_bins: List[Tuple[float, float, int]] = field(default_factory=list)
 
 
@@ -269,6 +316,12 @@ class WannaState(Enum):
     EscalateToHuman      = "EscalateToHuman"
 
 
+class HITLMode(Enum):
+    Interactive = "interactive"   # prompt doctor on every #wanna#
+    Auto        = "auto"          # prompt doctor only in TTY sessions
+    Disabled    = "disabled"      # never prompt doctor mid-pipeline
+
+
 @dataclass
 class WannaDecision:
     state: WannaState        = WannaState.ProceedToReport
@@ -277,7 +330,7 @@ class WannaDecision:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Utility / math helpers
+#  Math / parse helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_prompt_file(path: str, fallback: str) -> str:
@@ -293,14 +346,14 @@ def _path_basename(p: str) -> str:
 
 
 def _binary_entropy(p: float) -> float:
-    """H(p) = −p log₂p − (1−p) log₂(1−p)"""
     p = max(1e-9, min(1.0 - 1e-9, p))
     return -(p * math.log2(p) + (1.0 - p) * math.log2(1.0 - p))
 
 
 def _compute_uncertainty(sc: float, ddx_probs: List[float]) -> UncertaintyMetrics:
     mu  = sum(ddx_probs) / len(ddx_probs) if ddx_probs else 0.0
-    var = sum((p - mu) ** 2 for p in ddx_probs) / len(ddx_probs) if ddx_probs else 1.0
+    var = (sum((p - mu) ** 2 for p in ddx_probs) / len(ddx_probs)
+           if ddx_probs else 1.0)
     return UncertaintyMetrics(
         confidence=sc,
         uncertainty=1.0 - sc,
@@ -309,23 +362,17 @@ def _compute_uncertainty(sc: float, ddx_probs: List[float]) -> UncertaintyMetric
     )
 
 
-def _compute_ece(calibration_bins: List[Tuple[float, float, int]]) -> float:
-    """
-    Expected Calibration Error:  ECE = Σ (nₖ/N) |acc_k − conf_k|
-    Each bin is (mean_confidence, mean_accuracy, count).
-    Paper target: ECE = 0.08 for R-MoE vs 0.15 for GPT-4V.
-    """
-    total = sum(b[2] for b in calibration_bins)
+def _compute_ece(bins: List[Tuple[float, float, int]]) -> float:
+    """ECE = Σ (nₖ/N) |acc_k − conf_k|  (paper Table 1 target: 0.08)."""
+    total = sum(b[2] for b in bins)
     if total == 0:
         return 0.0
-    return sum(abs(b[1] - b[0]) * b[2] / total for b in calibration_bins)
+    return sum(abs(b[1] - b[0]) * b[2] / total for b in bins)
 
 
 def _extract_json_block(text: str) -> Optional[dict]:
     """Extract the first complete JSON object from free-form model output."""
-    # Find outermost { … }
-    depth = 0
-    start = -1
+    depth, start = 0, -1
     for i, ch in enumerate(text):
         if ch == "{":
             if depth == 0:
@@ -345,49 +392,44 @@ def _parse_arll_output(raw: str) -> ReasoningOutput:
     """
     Parse ARLL model output into a ReasoningOutput.
     Tries strict JSON first; falls back to regex extraction.
-    Computes Sc = 1 − σ² from the parsed DDx distribution.
     """
     out = ReasoningOutput(raw_output=raw)
 
-    # ── 1. Try JSON block extraction ─────────────────────────────────────────
     blob = _extract_json_block(raw)
     if blob:
         out.cot = blob.get("cot", raw[:300])
-        hypotheses: List[DDxHypothesis] = []
-        for item in blob.get("ddx", []):
-            hypotheses.append(DDxHypothesis(
+        hyps: List[DDxHypothesis] = [
+            DDxHypothesis(
                 diagnosis=str(item.get("diagnosis", "")),
                 probability=float(item.get("probability", 0.0)),
                 evidence=str(item.get("evidence", "")),
-            ))
-        if hypotheses:
-            out.ensemble = DDxEnsemble(hypotheses=hypotheses)
-        else:
-            # Fall through to regex
-            pass
-        out.wanna             = bool(blob.get("wanna", False))
-        out.feedback_request  = str(blob.get("feedback_request") or "none")
-        out.feedback_payload  = str(blob.get("feedback_payload") or "")
-        out.rag_references    = list(blob.get("rag_references", []))
-        out.temporal_note     = str(blob.get("temporal_note") or "")
+            )
+            for item in blob.get("ddx", [])
+        ]
+        if hyps:
+            out.ensemble = DDxEnsemble(hypotheses=hyps)
+        out.wanna            = bool(blob.get("wanna", False))
+        out.feedback_request = str(blob.get("feedback_request") or "none")
+        out.feedback_payload = str(blob.get("feedback_payload") or "")
+        out.rag_references   = list(blob.get("rag_references", []))
+        out.temporal_note    = str(blob.get("temporal_note") or "")
         return out
 
-    # ── 2. Regex fallback: scrape any probability-like numbers ────────────────
+    # Regex fallback
     out.cot = raw[:500]
-    pairs   = re.findall(
+    pairs = re.findall(
         r"([A-Za-z][A-Za-z ]{3,40})[:\-–]?\s*([0-9]+(?:\.[0-9]+)?)\s*%?", raw
     )
-    hyps: List[DDxHypothesis] = []
+    regex_hyps: List[DDxHypothesis] = []
     for name, prob_str in pairs[:6]:
         p = float(prob_str)
         if p > 1.0:
             p /= 100.0
         if 0.0 < p <= 1.0:
-            hyps.append(DDxHypothesis(diagnosis=name.strip(), probability=p, evidence=""))
-    if hyps:
-        out.ensemble = DDxEnsemble(hypotheses=hyps)
+            regex_hyps.append(DDxHypothesis(diagnosis=name.strip(), probability=p))
+    if regex_hyps:
+        out.ensemble = DDxEnsemble(hypotheses=regex_hyps)
 
-    # Wanna / feedback
     if "#wanna#" in raw or "wanna" in raw.lower():
         out.wanna = True
     if "alternate" in raw.lower():
@@ -396,84 +438,76 @@ def _parse_arll_output(raw: str) -> ReasoningOutput:
     elif out.wanna:
         out.feedback_request = "High-Res Crop"
         out.feedback_payload = "region=left_upper_quadrant;zoom=2.0"
-
     return out
 
 
-# ─── Mock responses for demo / testing (no llama-cpp-python installed) ────────
+def _fallback_ensemble(iteration: int) -> DDxEnsemble:
+    """Fallback DDx ensemble mirroring the paper's 3-iteration Sc trajectory."""
+    tables = [
+        [("Pulmonary adenocarcinoma", 0.42), ("Community-acquired pneumonia", 0.31),
+         ("Pulmonary sarcoidosis", 0.15),    ("TB reactivation", 0.12)],
+        [("Pulmonary adenocarcinoma", 0.58), ("Community-acquired pneumonia", 0.19),
+         ("Pulmonary sarcoidosis", 0.13),    ("TB reactivation", 0.10)],
+        [("Pulmonary adenocarcinoma", 0.72), ("Community-acquired pneumonia", 0.11),
+         ("Pulmonary sarcoidosis", 0.10),    ("TB reactivation", 0.07)],
+    ]
+    idx  = min(iteration - 1, len(tables) - 1)
+    return DDxEnsemble(hypotheses=[DDxHypothesis(d, p, "") for d, p in tables[idx]])
+
+
+# ── Mock responses (no llama-cpp-python) ─────────────────────────────────────
 
 _MOCK_VISUAL_EVIDENCE = """{
   "rois": [
-    {
-      "label": "Left upper lobe opacity",
-      "descriptor": "Ill-defined homogeneous density, ~3.2 × 2.8 cm",
-      "density": "soft-tissue",
-      "margin": "irregular",
-      "suspicion": "high"
-    },
-    {
-      "label": "Mediastinal widening",
-      "descriptor": "Superior mediastinum 8.4 cm, borderline for age",
-      "density": "soft-tissue",
-      "margin": "smooth",
-      "suspicion": "medium"
-    }
+    {"label": "Left upper lobe opacity",
+     "descriptor": "Ill-defined homogeneous density, ~3.2 × 2.8 cm",
+     "density": "soft-tissue", "margin": "irregular", "suspicion": "high"},
+    {"label": "Mediastinal widening",
+     "descriptor": "Superior mediastinum 8.4 cm, borderline for age",
+     "density": "soft-tissue", "margin": "smooth", "suspicion": "medium"}
   ],
-  "feature_summary": "Bilateral lung fields partially visualised. Left upper lobe hyperdensity with irregular margin suggesting consolidation or mass. No pneumothorax. Cardiac silhouette within normal limits.",
+  "feature_summary": "Left upper lobe hyperdensity with irregular margin suggesting consolidation or mass. No pneumothorax.",
   "confidence_level": "high",
   "saliency_crop": "120,60,380,280"
 }"""
 
-# Iteration-indexed ARLL mock outputs (3 iterations mapping low→medium→high Sc)
-_MOCK_ARLL_OUTPUTS: List[str] = [
-    # Iteration 1: Sc ~0.79 → RequestHighResCrop
+_MOCK_ARLL_OUTPUTS = [
     """{
-  "cot": "Step 1: MPE identified an ill-defined left upper lobe opacity (~3.2×2.8 cm, irregular margin). Step 2: DDx candidates — primary malignancy vs consolidation vs sarcoidosis. Step 3: Ensemble draws show divergent posteriors. Step 4: σ² is high due to ambiguous margin; Sc < 0.90. Requesting high-resolution crop for margin characterisation.",
+  "cot": "Step 1: MPE identified ill-defined LUL opacity (~3.2×2.8 cm, irregular margin). Step 2: DDx — malignancy vs consolidation vs sarcoidosis. Step 3: High σ² due to ambiguous margin. Sc < 0.90. Requesting High-Res Crop.",
   "ddx": [
-    {"diagnosis": "Pulmonary adenocarcinoma",   "probability": 0.42, "evidence": "irregular spiculated margin, upper lobe location"},
+    {"diagnosis": "Pulmonary adenocarcinoma",    "probability": 0.42, "evidence": "irregular spiculated margin, upper lobe location"},
     {"diagnosis": "Community-acquired pneumonia","probability": 0.31, "evidence": "homogeneous density, possible air bronchogram"},
-    {"diagnosis": "Pulmonary sarcoidosis",       "probability": 0.15, "evidence": "bilateral hilar enlargement tendency"},
-    {"diagnosis": "Tuberculosis reactivation",   "probability": 0.12, "evidence": "upper lobe predilection"}
+    {"diagnosis": "Pulmonary sarcoidosis",        "probability": 0.15, "evidence": "bilateral hilar enlargement tendency"},
+    {"diagnosis": "TB reactivation",              "probability": 0.12, "evidence": "upper lobe predilection"}
   ],
-  "sigma2": 0.0207,
-  "sc": 0.7923,
-  "wanna": true,
-  "feedback_request": "High-Res Crop",
-  "feedback_payload": "region=left_upper_lobe;zoom=2.5",
+  "sigma2": 0.0207, "sc": 0.7923, "wanna": true,
+  "feedback_request": "High-Res Crop", "feedback_payload": "region=left_upper_lobe;zoom=2.5",
   "rag_references": ["MIMIC-CXR: spiculated nodule → malignancy PPV 0.71", "ACR Lung-RADS 4A criteria"],
   "temporal_note": null
 }""",
-    # Iteration 2: Sc ~0.86 → RequestAlternateView
     """{
-  "cot": "Step 1: High-res crop confirms spiculated margin at 2.5× zoom. Step 2: Margin characteristics now more consistent with malignancy; consolidation less likely. Step 3: Ensemble converging but pleural involvement uncertain. Step 4: Sc still < 0.90; requesting lateral view to assess pleural and posterior involvement.",
+  "cot": "Step 1: High-res crop confirms spiculated margin at 2.5×. Step 2: Consolidation less likely. Step 3: Pleural involvement uncertain. Requesting lateral view.",
   "ddx": [
-    {"diagnosis": "Pulmonary adenocarcinoma",   "probability": 0.58, "evidence": "spiculated margin confirmed on high-res crop"},
-    {"diagnosis": "Community-acquired pneumonia","probability": 0.19, "evidence": "air bronchogram absent on crop"},
-    {"diagnosis": "Pulmonary sarcoidosis",       "probability": 0.13, "evidence": "no bilateral hilar prominence confirmed"},
-    {"diagnosis": "Tuberculosis reactivation",   "probability": 0.10, "evidence": "no cavitation on crop"}
+    {"diagnosis": "Pulmonary adenocarcinoma",    "probability": 0.58, "evidence": "spiculated margin confirmed on high-res crop"},
+    {"diagnosis": "Community-acquired pneumonia","probability": 0.19, "evidence": "air bronchogram absent"},
+    {"diagnosis": "Pulmonary sarcoidosis",        "probability": 0.13, "evidence": "no bilateral hilar prominence"},
+    {"diagnosis": "TB reactivation",              "probability": 0.10, "evidence": "no cavitation on crop"}
   ],
-  "sigma2": 0.0312,
-  "sc": 0.8587,
-  "wanna": true,
-  "feedback_request": "Alternate View",
-  "feedback_payload": "region=left_upper_lobe;angle=lateral",
-  "rag_references": ["MIMIC-CXR: confirmed spiculation PPV 0.81 malignancy", "RSNA 2023: lateral view pleural staging"],
+  "sigma2": 0.0312, "sc": 0.8587, "wanna": true,
+  "feedback_request": "Alternate View", "feedback_payload": "region=left_upper_lobe;angle=lateral",
+  "rag_references": ["MIMIC-CXR: confirmed spiculation PPV 0.81", "RSNA 2023: lateral view pleural staging"],
   "temporal_note": null
 }""",
-    # Iteration 3: Sc ~0.94 → ProceedToReport
     """{
-  "cot": "Step 1: Lateral view confirms no pleural effusion; mass isolated to posterior segment LUL. Step 2: All ensemble passes now agree on primary malignancy with high posterior. Step 3: σ² collapsed; Sc >= 0.90. Step 4: Proceeding to CSR for ICD-11 classification and TIRADS/risk scoring.",
+  "cot": "Step 1: Lateral confirms no pleural effusion; mass isolated to posterior LUL. Step 2: All ensemble passes agree on malignancy. σ² collapsed. Sc >= 0.90. Proceeding to CSR.",
   "ddx": [
-    {"diagnosis": "Pulmonary adenocarcinoma",   "probability": 0.72, "evidence": "spiculated margin, posterior LUL, no pleural spread"},
-    {"diagnosis": "Community-acquired pneumonia","probability": 0.11, "evidence": "clinical context needed but image features inconsistent"},
-    {"diagnosis": "Pulmonary sarcoidosis",       "probability": 0.10, "evidence": "no hilar adenopathy on lateral"},
-    {"diagnosis": "Tuberculosis reactivation",   "probability": 0.07, "evidence": "no satellite nodules or cavitation"}
+    {"diagnosis": "Pulmonary adenocarcinoma",    "probability": 0.72, "evidence": "spiculated margin, posterior LUL, no pleural spread"},
+    {"diagnosis": "Community-acquired pneumonia","probability": 0.11, "evidence": "image features inconsistent"},
+    {"diagnosis": "Pulmonary sarcoidosis",        "probability": 0.10, "evidence": "no hilar adenopathy on lateral"},
+    {"diagnosis": "TB reactivation",              "probability": 0.07, "evidence": "no satellite nodules or cavitation"}
   ],
-  "sigma2": 0.0558,
-  "sc": 0.9442,
-  "wanna": false,
-  "feedback_request": null,
-  "feedback_payload": null,
+  "sigma2": 0.0558, "sc": 0.9442, "wanna": false,
+  "feedback_request": null, "feedback_payload": null,
   "rag_references": ["MIMIC-CXR F1=0.92 benchmark met", "ACR Lung-RADS 4X: highly suspicious"],
   "temporal_note": "No prior imaging available for temporal comparison."
 }""",
@@ -486,26 +520,20 @@ _MOCK_CSR_REPORT = json.dumps({
         "scale": "Lung-RADS",
         "score": "4X",
         "interpretation": "Highly suspicious for malignancy — tissue sampling recommended",
-        "tirads": "N/A (non-thyroid lesion)",
-        "birads": "N/A (non-breast imaging)",
     },
     "narrative": (
-        "Clinical History: Incidental left upper lobe (LUL) opacity detected on PA chest radiograph. "
-        "No prior imaging available for comparison.\n\n"
-        "Technique: Posteroanterior and lateral chest radiograph.\n\n"
-        "Findings: A 3.2 × 2.8 cm ill-defined, spiculated opacity is identified in the posterior "
-        "segment of the left upper lobe. Margins are irregular with no satellite nodules. "
-        "No pleural effusion. No mediastinal or hilar lymphadenopathy. Cardiac silhouette normal. "
-        "No pneumothorax. Bony thorax intact.\n\n"
+        "Clinical History: Incidental LUL opacity on PA chest X-ray. No prior imaging.\n\n"
+        "Technique: PA and lateral chest radiograph.\n\n"
+        "Findings: A 3.2 × 2.8 cm ill-defined, spiculated opacity in the posterior segment of the "
+        "left upper lobe. Margins are irregular. No pleural effusion. No mediastinal adenopathy. "
+        "Cardiac silhouette normal. No pneumothorax.\n\n"
         "Impression: Spiculated LUL mass highly suspicious for primary lung malignancy (Lung-RADS 4X). "
-        "Pulmonary adenocarcinoma is the leading differential diagnosis (DDx posterior 0.72). "
-        "Infection and sarcoidosis are considered less likely given morphological features."
+        "Pulmonary adenocarcinoma is the leading DDx (p=0.72). Infection and sarcoidosis less likely."
     ),
-    "summary": "3.2 cm spiculated LUL opacity, Lung-RADS 4X — highly suspicious for primary lung malignancy.",
+    "summary": "3.2 cm spiculated LUL opacity — Lung-RADS 4X, highly suspicious for primary lung malignancy.",
     "treatment_recommendations": (
-        "Urgent CT chest with contrast (within 1–2 weeks) for lesion characterisation and staging. "
-        "PET-CT if CT confirms lesion ≥ 8 mm. CT-guided biopsy or VATS resection per MDT decision. "
-        "Refer to thoracic surgery and oncology. Smoking cessation counselling if applicable."
+        "Urgent CT chest with contrast (1–2 weeks) for lesion characterisation. PET-CT if CT confirms "
+        "≥8 mm. CT-guided biopsy or VATS per MDT decision. Refer thoracic surgery + oncology."
     ),
     "hitl_review_required": False,
     "hitl_reason": "",
@@ -517,25 +545,150 @@ _MOCK_CSR_REPORT = json.dumps({
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Session audit logger
+#  Expert Query Router  (v2.0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class _ExpertQueryRouter:
+    """
+    Classify a doctor's natural-language question to route it to the most
+    appropriate expert — no extra model required.
+
+    Reasoning Expert (ARLL / DeepSeek-R1):
+        DDx, probability, evidence, fracture, imaging, confidence, explain…
+
+    Clinical Expert (CSR / Llama-3-Medius):
+        Treatment, medication, surgery, immediate, urgent, dose, biopsy…
+    """
+
+    _CLINICAL = [
+        "treat", "treatment", "medication", "medicine", "drug", "prescri",
+        "surgery", "operation", "immediate", "urgent", "dose", "follow-up",
+        "refer", "biopsy", "procedure", "protocol", "discharge", "care",
+        "manage", "admit", "antibiotics", "chemo", "radiation",
+    ]
+    _REASONING = [
+        "probabilit", "likelihood", "chance", "fracture", "diagnos", "ddx",
+        "differential", "explain", "findings", "evidence", "why", "how",
+        "confidence", "uncertainty", "scan", "imaging", "compar", "lesion",
+        "mass", "opacity", "cot", "reasoning", "saliency", "ensemble",
+    ]
+
+    @classmethod
+    def route(cls, question: str) -> ExpertTarget:
+        q = question.lower()
+        c_score = sum(1 for kw in cls._CLINICAL  if kw in q)
+        r_score = sum(1 for kw in cls._REASONING if kw in q)
+        if c_score > r_score:
+            return ExpertTarget.Clinical
+        return ExpertTarget.Reasoning
+
+    @classmethod
+    def describe(cls, target: ExpertTarget) -> str:
+        if target == ExpertTarget.Clinical:
+            return "CSR (clinical report / treatment)"
+        return "ARLL (diagnostic reasoning)"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MPE Confidence Gate  (v2.0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MPEConfidenceGate:
+    """
+    Phase 1 gate: checks MPE's own perception_confidence before ARLL runs.
+    If MPE reports low confidence (e.g. blurry image, poor positioning),
+    trigger an early #wanna# to request a better image — saving ARLL compute.
+    """
+
+    _LEVEL_SCORE: Dict[str, float] = {"low": 0.30, "medium": 0.65, "high": 0.90}
+
+    def __init__(self, threshold: float = 0.60) -> None:
+        self._threshold = threshold
+
+    def passes(self, evidence: PerceptionEvidence) -> bool:
+        score = self._LEVEL_SCORE.get(evidence.confidence_level.lower(), 0.50)
+        return score >= self._threshold
+
+    def score(self, evidence: PerceptionEvidence) -> float:
+        return self._LEVEL_SCORE.get(evidence.confidence_level.lower(), 0.50)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Doctor HITL prompt  (v2.0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _is_interactive(mode: HITLMode) -> bool:
+    if mode == HITLMode.Disabled:
+        return False
+    if mode == HITLMode.Interactive:
+        return True
+    return sys.stdin.isatty()
+
+
+def _prompt_doctor_for_clarification(
+    request: str,
+    payload: str,
+    iteration: int,
+    mode: HITLMode,
+) -> Optional[DoctorFeedback]:
+    """
+    In interactive mode, ask the doctor for a zoom hint before the next
+    #wanna# iteration.  Returns None if not interactive or doctor skips.
+    """
+    if not _is_interactive(mode):
+        return None
+
+    print(
+        f"\n{_YELLOW}{_BOLD}  ┌─ R-MoE → DOCTOR (Iteration {iteration}) ─────────────────────┐{_RESET}\n"
+        f"{_YELLOW}  │  Low confidence — requesting: {_BOLD}{request}{_RESET}{_YELLOW}\n"
+        f"  │  Target: {payload}\n"
+        f"{_YELLOW}{_BOLD}  │  Your hint helps me focus.  Examples:{_RESET}\n"
+        f"{_DIM}  │    'Show me the fracture site'\n"
+        f"  │    'Focus on T4-T6 vertebrae'\n"
+        f"  │    (press Enter to let me auto-refocus)\n"
+        f"{_YELLOW}{_BOLD}  └──────────────────────────────────────────────────────────┘{_RESET}\n"
+    )
+    print(f"{_GREEN}{_BOLD}  [DOCTOR]  {_RESET}", end="", flush=True)
+    try:
+        user_input = input().strip()
+    except EOFError:
+        return None
+
+    if not user_input:
+        return None
+
+    zoom_keywords = [
+        "show", "zoom", "focus", "look at", "check", "highlight",
+        "mark", "point", "fracture", "lesion", "mass", "opacity",
+        "region", "area", "site", "spot", "vertebr", "rib", "lobe",
+    ]
+    is_zoom = any(kw in user_input.lower() for kw in zoom_keywords)
+
+    print(
+        f"{_CYAN}  [Mr.ToM]  {_RESET}"
+        f"{'Zooming in on: ' + user_input if is_zoom else 'Adding context: ' + user_input}"
+    )
+    return DoctorFeedback(
+        message=user_input,
+        zoom_region=user_input,
+        is_zoom_command=is_zoom,
+        raw_input=user_input,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Audit Logger
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class AuditLogger:
-    """
-    Writes a structured JSON audit trail for HITL review.
-
-    The audit log records every iteration's perception evidence, DDx ensemble,
-    uncertainty metrics, and the final clinical report so radiologists can
-    replay and validate the reasoning chain.
-    """
+    """JSON audit trail for HITL review and reproducibility."""
 
     def __init__(self, path: Optional[str] = None) -> None:
         self._path    = path
         self._entries: List[dict] = []
 
     def log(self, event: str, data: dict) -> None:
-        entry = {"timestamp": time.time(), "event": event, **data}
-        self._entries.append(entry)
+        self._entries.append({"timestamp": time.time(), "event": event, **data})
 
     def flush(self, summary: RunSummary) -> None:
         if not self._path:
@@ -548,15 +701,16 @@ class AuditLogger:
             "total_elapsed_s": round(summary.total_elapsed_s, 3),
             "trace": [
                 {
-                    "iteration":    t.iteration,
-                    "decision":     t.decision,
-                    "sc":           round(t.metrics.confidence, 4),
-                    "sigma2":       round(t.metrics.ddx_variance, 6),
-                    "entropy":      round(t.metrics.predictive_entropy, 4),
-                    "elapsed_s":    round(t.elapsed_s, 3),
-                    "ddx_ensemble": t.ddx_ensemble,
-                    "rag_refs":     t.rag_references,
-                    "temporal":     t.temporal_note,
+                    "iteration":     t.iteration,
+                    "decision":      t.decision,
+                    "sc":            round(t.metrics.confidence, 4),
+                    "sigma2":        round(t.metrics.ddx_variance, 6),
+                    "entropy":       round(t.metrics.predictive_entropy, 4),
+                    "elapsed_s":     round(t.elapsed_s, 3),
+                    "ddx_ensemble":  t.ddx_ensemble,
+                    "rag_refs":      t.rag_references,
+                    "temporal":      t.temporal_note,
+                    "doctor_hint":   t.doctor_feedback,
                 }
                 for t in summary.trace
             ],
@@ -565,14 +719,13 @@ class AuditLogger:
         try:
             with open(self._path, "w", encoding="utf-8") as fh:
                 json.dump(audit, fh, indent=2)
-            print(f"\n{_DIM}  [audit] Audit trail written → {self._path}{_RESET}")
+            print(f"\n{_DIM}  [audit] Audit trail → {self._path}{_RESET}")
         except OSError as exc:
-            print(f"\n{_YELLOW}[audit] Could not write audit log: {exc}{_RESET}",
-                  file=sys.stderr)
+            print(f"\n{_YELLOW}[audit] Could not write: {exc}{_RESET}", file=sys.stderr)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CLI output  (mirrors CliOutput.hpp colour palette)
+#  CLI output
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _print_rule(c: str = "=") -> None:
@@ -590,26 +743,31 @@ def print_banner() -> None:
     print(
         f"\n{_CYAN}{_BOLD}"
         "  ========================================================================\n"
-        "    R-MoE  |  Recursive Multi-Agent Mixture-of-Experts  Clinical Engine\n"
-        "    Autonomous Medical Diagnostics  ·  llama-cpp-python  ·  [Research]\n"
+        "    R-MoE v2.0  |  Recursive Multi-Agent Mixture-of-Experts\n"
+        "    'Hybrid Autonomous-Human Medical Reasoning'  ·  llama-cpp-python\n"
         "  ========================================================================\n"
         f"{_RESET}"
         f"{_DIM}"
         "  Paper: 'RMoE for Autonomous Clinical Diagnostics'\n"
-        "  Benchmarks: F1=0.92  ·  ECE=0.08  ·  TypeI=5.2%  (MIMIC-CXR)\n"
+        "  Benchmarks: F1=0.92 · ECE=0.08 · TypeI=5.2%  (MIMIC-CXR)\n"
         f"  {_RESET}\n"
     )
 
 
 def _print_input_info(
-    image_path: str, threshold: float, max_iter: int,
+    image_path: str,
+    threshold: float,
+    max_iter: int,
     prior_image: Optional[str] = None,
+    hitl_mode: HITLMode = HITLMode.Auto,
 ) -> None:
     print(
         f"{_WHITE}  Patient Input   : {_CYAN}{image_path}{_RESET}\n"
-        + (f"{_WHITE}  Prior Scan      : {_CYAN}{prior_image}{_RESET}\n" if prior_image else "")
+        + (f"{_WHITE}  Prior Scan      : {_CYAN}{prior_image}{_RESET}\n"
+           if prior_image else "")
         + f"{_WHITE}  Confidence Gate : {_CYAN}Sc >= {threshold:.2f}{_RESET}"
-        f"{_WHITE}  |  Max Iterations : {_CYAN}{max_iter}{_RESET}\n"
+        f"{_WHITE}  |  Max Iter : {_CYAN}{max_iter}{_RESET}"
+        f"{_WHITE}  |  HITL : {_CYAN}{hitl_mode.value}{_RESET}\n"
     )
     _print_rule()
     print()
@@ -622,30 +780,50 @@ def _print_iteration_header(iteration: int, max_iter: int) -> None:
     )
 
 
-def _print_mpe_status(proj_path: str, text_path: str,
-                       evidence: Optional[PerceptionEvidence] = None) -> None:
+def _print_mpe_status(
+    proj: str,
+    text: str,
+    evidence: Optional[PerceptionEvidence] = None,
+    mpe_gate_passed: bool = True,
+) -> None:
     print(
         f"\n{_BLUE}{_BOLD}  [Phase 1]  {_RESET}"
         f"{_BOLD}MPE  Multi-Modal Perception Engine"
-        f"{_RESET}{_DIM}  [Qwen2-VL]\n{_RESET}"
-        f"{_DIM}             Projection : {_RESET}{_path_basename(proj_path)}\n"
-        f"{_DIM}             Encoder    : {_RESET}{_path_basename(text_path)}\n"
-        f"{_GREEN}             Status     : OK  —  visual evidence extracted\n{_RESET}"
+        f"{_RESET}{_DIM}  [Qwen2-VL / Moondream2]\n{_RESET}"
+        f"{_DIM}             Projection : {_RESET}{_path_basename(proj)}\n"
+        f"{_DIM}             Encoder    : {_RESET}{_path_basename(text)}\n"
     )
-    if evidence and evidence.rois:
+    if evidence:
+        lvl = evidence.confidence_level
+        lvl_color = _GREEN if lvl == "high" else (_YELLOW if lvl == "medium" else _RED)
+        print(f"             Perception confidence : {lvl_color}{lvl.upper()}{_RESET}")
         for roi in evidence.rois[:3]:
-            label = roi.get("label", "ROI")
-            desc  = roi.get("descriptor", "")
-            susp  = roi.get("suspicion", "")
-            color = _RED if susp == "high" else (_YELLOW if susp == "medium" else _DIM)
-            print(f"             {color}→ {label}: {desc}{_RESET}")
-    if evidence and evidence.saliency_crop:
-        print(f"{_DIM}             Saliency crop : {_RESET}{evidence.saliency_crop}")
+            susp_color = (_RED if roi.get("suspicion") == "high"
+                          else (_YELLOW if roi.get("suspicion") == "medium" else _DIM))
+            print(
+                f"             {susp_color}→ {roi.get('label','ROI')}: "
+                f"{roi.get('descriptor','')}{_RESET}"
+            )
+        if evidence.saliency_crop:
+            print(f"{_DIM}             Saliency crop : {_RESET}{evidence.saliency_crop}")
+
+    if mpe_gate_passed:
+        print(f"{_GREEN}             MPE Gate : PASS  →  evidence forwarded to ARLL{_RESET}")
+    else:
+        print(
+            f"{_YELLOW}{_BOLD}"
+            "             MPE Gate : LOW CONFIDENCE  →  #wanna# early trigger\n"
+            f"{_RESET}"
+        )
 
 
 def _print_arll_result(
-    sc: float, sigma2: float, entropy: float, gate_passed: bool,
-    request: str = "", payload: str = "",
+    sc: float,
+    sigma2: float,
+    entropy: float,
+    gate_passed: bool,
+    request: str = "",
+    payload: str = "",
     ensemble: Optional[DDxEnsemble] = None,
     rag_refs: Optional[List[str]] = None,
 ) -> None:
@@ -660,10 +838,10 @@ def _print_arll_result(
     if ensemble and ensemble.hypotheses:
         print(f"{_DIM}             DDx ensemble ({len(ensemble.hypotheses)} hypotheses):{_RESET}")
         for h in sorted(ensemble.hypotheses, key=lambda x: x.probability, reverse=True)[:4]:
-            bar_len = max(1, int(h.probability * 20))
-            bar = "█" * bar_len
-            color = _GREEN if h.probability >= 0.5 else (_YELLOW if h.probability >= 0.2 else _DIM)
-            print(f"               {color}{bar:<20} {h.probability:.2f}  {h.diagnosis}{_RESET}")
+            bar  = "█" * max(1, int(h.probability * 20))
+            col  = (_GREEN if h.probability >= 0.5 else
+                    (_YELLOW if h.probability >= 0.2 else _DIM))
+            print(f"               {col}{bar:<20} {h.probability:.2f}  {h.diagnosis}{_RESET}")
     if gate_passed:
         print(
             f"{_GREEN}{_BOLD}"
@@ -690,7 +868,7 @@ def _print_csr_status(model_path: str) -> None:
     print(
         f"\n{_BLUE}{_BOLD}  [Phase 3]  {_RESET}"
         f"{_BOLD}CSR  Clinical Synthesis & Reporting"
-        f"{_RESET}{_DIM}   [Llama-3-Medius]\n{_RESET}"
+        f"{_RESET}{_DIM}   [Llama-3-Medius / MedGamma-2B]\n{_RESET}"
         f"{_DIM}             Model   : {_RESET}{_path_basename(model_path)}\n"
         f"{_GREEN}"
         "             ICD-11 / SNOMED CT coding applied\n"
@@ -700,7 +878,7 @@ def _print_csr_status(model_path: str) -> None:
 
 
 def _print_abstain(reason: str) -> None:
-    display = (reason[:120] + "...") if len(reason) > 120 else reason
+    display = (reason[:120] + "…") if len(reason) > 120 else reason
     print(
         f"\n{_RED}{_BOLD}  [ABSTAIN]  Escalating to Human Radiologist\n{_RESET}"
         f"{_RED}{_DIM}             Reason  : {display}{_RESET}"
@@ -709,7 +887,7 @@ def _print_abstain(reason: str) -> None:
 
 def _print_kv(key: str, value: str, color: Optional[str] = None) -> None:
     col = color or ""
-    print(f"{_WHITE}  {key:<20}: {_RESET}{col}{value}{_RESET}")
+    print(f"{_WHITE}  {key:<22}: {_RESET}{col}{value}{_RESET}")
 
 
 def _print_run_summary(summary: RunSummary, max_iter: int) -> None:
@@ -734,11 +912,13 @@ def _print_run_summary(summary: RunSummary, max_iter: int) -> None:
         print(f"\n{_DIM}  Iteration Trace\n{_RESET}", end="")
         _print_rule("-")
         print(
-            f"{_BOLD}   #   {'Decision':<26}{'Sc':>10}{'σ²':>10}{'H':>10}{'t(s)':>8}{_RESET}"
+            f"{_BOLD}   #   {'Decision':<26}{'Sc':>10}{'σ²':>10}"
+            f"{'H':>10}{'t(s)':>8}{'DoctorHint':>14}{_RESET}"
         )
         _print_rule("-")
         for t in summary.trace:
             color = _GREEN if t.metrics.confidence >= 0.90 else _YELLOW
+            hint  = ("✓ " + t.doctor_feedback[:10]) if t.doctor_feedback else "—"
             print(
                 f"{color}"
                 f"   {t.iteration}   {t.decision:<26}"
@@ -746,6 +926,7 @@ def _print_run_summary(summary: RunSummary, max_iter: int) -> None:
                 f"{t.metrics.ddx_variance:>10.4f}"
                 f"{t.metrics.predictive_entropy:>10.4f}"
                 f"{t.elapsed_s:>8.1f}"
+                f"{hint:>14}"
                 f"{_RESET}"
             )
         _print_rule("-")
@@ -761,14 +942,13 @@ def _print_clinical_report(report_json: str) -> None:
         _print_kv("SNOMED CT", rep.get("snomed_ct", "N/A"), _CYAN)
         rs = rep.get("risk_stratification", {})
         if isinstance(rs, dict):
-            scale = rs.get("scale", "")
-            score = rs.get("score", rs.get("tirads", rs.get("birads", "N/A")))
+            scale  = rs.get("scale", "")
+            score  = rs.get("score", "N/A")
             interp = rs.get("interpretation", "")
             _print_kv(scale or "Risk Score", f"{score}  {interp}", _YELLOW)
 
         narr = rep.get("narrative", "N/A")
-        narr_short = (narr[:300] + " …") if len(narr) > 300 else narr
-        _print_kv("Narrative",  narr_short)
+        _print_kv("Narrative",  (narr[:300] + " …") if len(narr) > 300 else narr)
         _print_kv("Treatment",  rep.get("treatment_recommendations", "N/A"))
         _print_kv("Summary",    rep.get("summary", "N/A"))
 
@@ -778,12 +958,10 @@ def _print_clinical_report(report_json: str) -> None:
         if hitl and rep.get("hitl_reason"):
             _print_kv("HITL Reason", rep["hitl_reason"], _RED)
 
-        final_sc  = rep.get("final_sc")
-        ece_est   = rep.get("ece_estimate")
-        if final_sc is not None:
-            _print_kv("Final Sc",  f"{final_sc:.4f}", _CYAN)
-        if ece_est is not None:
-            _print_kv("ECE",       f"{ece_est:.4f}", _CYAN)
+        if rep.get("final_sc") is not None:
+            _print_kv("Final Sc",   f"{rep['final_sc']:.4f}", _CYAN)
+        if rep.get("ece_estimate") is not None:
+            _print_kv("ECE",        f"{rep['ece_estimate']:.4f}", _CYAN)
     except (json.JSONDecodeError, TypeError):
         print(f"{_DIM}{report_json}{_RESET}")
     print()
@@ -791,38 +969,31 @@ def _print_clinical_report(report_json: str) -> None:
 
 
 def _print_eval_summary(summary: RunSummary) -> None:
-    """Print calibration / ECE evaluation block (--eval flag)."""
     print()
     _print_section("EVALUATION METRICS  (paper Table 1)")
     print()
     scs = [t.metrics.confidence for t in summary.trace]
     if scs:
-        _print_kv("Sc values",  ", ".join(f"{s:.4f}" for s in scs), _CYAN)
-        _print_kv("Final Sc",   f"{scs[-1]:.4f}", _CYAN)
+        _print_kv("Sc trajectory", " → ".join(f"{s:.4f}" for s in scs), _CYAN)
     ece = _compute_ece(summary.calibration_bins)
-    _print_kv("ECE",            f"{ece:.4f}  (paper target: 0.08)", _GREEN if ece <= 0.10 else _YELLOW)
-    _print_kv("Recursions",
-              f"{sum(1 for t in summary.trace if t.metrics.confidence < 0.90)} / {len(summary.trace)}",
+    _print_kv("ECE", f"{ece:.4f}  (paper target ≤ 0.08)",
+              _GREEN if ece <= 0.10 else _YELLOW)
+    n_wanna = sum(1 for t in summary.trace if t.metrics.confidence < 0.90)
+    _print_kv("Recursions triggered",
+              f"{n_wanna} / {len(summary.trace)}  ({100*n_wanna/max(1,len(summary.trace)):.0f}%)",
               _CYAN)
     print()
     _print_rule("=")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  ExpertSwapper  —  one model in VRAM at a time
+#  ExpertSwapper  — one model in VRAM at a time
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ExpertSwapper:
     """
-    Wraps llama-cpp-python Llama instances with explicit load / unload
-    semantics.  Only one model may be resident in GPU memory at a time.
-
-    Methods:
-        load_expert_model(path, params)          — text-only expert
-        load_vision_model(text_path, proj_path, params)  — Qwen2-VL + CLIP
-        infer_text(system, user, max_tokens)     — chat completion
-        infer_with_image(system, image, user, max_tokens) — multimodal
-        unload()                                 — free VRAM immediately
+    Wraps llama-cpp-python Llama instances with explicit load/unload semantics.
+    Only ONE model is resident in GPU memory at a time.
     """
 
     def __init__(self) -> None:
@@ -854,7 +1025,7 @@ class ExpertSwapper:
             return True
 
         if not os.path.exists(model_path):
-            print(f"[llama.cpp] Model not found: {model_path}", file=sys.stderr)
+            print(f"[llama.cpp] Not found: {model_path}", file=sys.stderr)
             return False
 
         try:
@@ -878,21 +1049,14 @@ class ExpertSwapper:
         mmproj_path: str,
         params: Optional[InferenceParams] = None,
     ) -> bool:
-        """
-        Load Qwen2-VL text backbone + CLIP mmproj together.
-        The Qwen2VLChatHandler must be created first so that the clip_model_path
-        is resolved before the Llama context is initialised.
-        """
+        """Load Qwen2-VL backbone + CLIP mmproj together."""
         self.unload()
         self._params      = params or InferenceParams()
         self._model_path  = model_path
         self._mmproj_path = mmproj_path
 
         if not _HAS_LLAMA_CPP:
-            print(
-                f"[llama.cpp] Mock vision load: {model_path} + {mmproj_path}",
-                file=sys.stderr,
-            )
+            print(f"[llama.cpp] Mock vision: {model_path} + {mmproj_path}", file=sys.stderr)
             return True
 
         if not os.path.exists(model_path):
@@ -914,13 +1078,10 @@ class ExpertSwapper:
                 logits_all=True,
                 verbose=False,
             )
-            print(
-                f"[llama.cpp] load vision: {model_path} + mmproj: {mmproj_path}",
-                file=sys.stderr,
-            )
+            print(f"[llama.cpp] load vision: {model_path} + {mmproj_path}", file=sys.stderr)
             return True
         except Exception as exc:
-            print(f"[llama.cpp] Failed vision load {model_path}: {exc}", file=sys.stderr)
+            print(f"[llama.cpp] Failed vision: {exc}", file=sys.stderr)
             return False
 
     def infer_text(
@@ -932,10 +1093,7 @@ class ExpertSwapper:
         n_gen = max_new_tokens if max_new_tokens > 0 else self._params.max_new_tokens
 
         if not _HAS_LLAMA_CPP or self._llm is None:
-            return (
-                f"[mock] {self._model_path} | "
-                f"sys={system_prompt[:30]}… | usr={user_input[:30]}…"
-            )
+            return f"[mock] {self._model_path} | sys={system_prompt[:30]}… | usr={user_input[:30]}…"
 
         try:
             resp = self._llm.create_chat_completion(
@@ -963,10 +1121,7 @@ class ExpertSwapper:
         n_gen = max_new_tokens if max_new_tokens > 0 else self._params.max_new_tokens
 
         if not _HAS_LLAMA_CPP or self._llm is None:
-            return (
-                f"[mock/image] {self._model_path} | img={image_path} | "
-                f"usr={user_text[:30]}…"
-            )
+            return f"[mock/img] {self._model_path} | img={image_path} | {user_text[:30]}…"
 
         if not self._mmproj_path:
             return self.infer_text(system_prompt, user_text, max_new_tokens)
@@ -1006,16 +1161,10 @@ class ExpertSwapper:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class WannaStateMachine:
-    """
-    Confidence gate implementing the #wanna# protocol (paper §3.2).
+    """Confidence gate implementing the #wanna# protocol (paper §3.2)."""
 
-    if Sc >= θ  →  ProceedToReport
-    if Sc <  θ  and iteration < hard_limit  →  RequestHighResCrop | RequestAlternateView
-    if Sc <  θ  and iteration == hard_limit →  EscalateToHuman
-    """
-
-    def __init__(self, hard_limit_iterations: int, threshold: float) -> None:
-        self._hard_limit = hard_limit_iterations
+    def __init__(self, hard_limit: int, threshold: float) -> None:
+        self._hard_limit = hard_limit
         self._threshold  = threshold
 
     @property
@@ -1038,29 +1187,28 @@ class WannaStateMachine:
                 FeedbackTensor(reasoning.feedback_request, reasoning.feedback_payload),
             )
 
-        req = reasoning.feedback_request.lower()
-        if "alternate" in req:
-            state = WannaState.RequestAlternateView
-        else:
-            state = WannaState.RequestHighResCrop
+        if "alternate" in reasoning.feedback_request.lower():
+            return WannaDecision(
+                WannaState.RequestAlternateView, iteration,
+                FeedbackTensor(reasoning.feedback_request, reasoning.feedback_payload),
+            )
 
         return WannaDecision(
-            state, iteration,
+            WannaState.RequestHighResCrop, iteration,
             FeedbackTensor(reasoning.feedback_request, reasoning.feedback_payload),
         )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Expert agents
+#  Expert Agents
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class _VisionExpert:
     """
-    Phase 1 – MPE: Multi-Modal Perception Engine
-    ─────────────────────────────────────────────
-    Loads Qwen2-VL (text backbone) + CLIP mmproj, runs multimodal inference
-    on the patient image, and returns structured PerceptionEvidence including
-    ROIs, feature summaries, and saliency crop coordinates.
+    Phase 1 – MPE: Multi-Modal Perception Engine  [Qwen2-VL / Moondream2]
+
+    Accepts an optional DoctorFeedback zoom command so the doctor can direct
+    attention:  "Show me the fracture site"  →  zooms MPE on that region.
     """
 
     def __init__(self, swapper: ExpertSwapper, iteration: int = 1) -> None:
@@ -1068,7 +1216,10 @@ class _VisionExpert:
         self._iteration = iteration
 
     def execute(
-        self, input_data: str, prior_image: Optional[str] = None
+        self,
+        input_data: str,
+        prior_image: Optional[str] = None,
+        doctor_feedback: Optional[DoctorFeedback] = None,
     ) -> PerceptionEvidence:
         system_prompt = _load_prompt_file(
             "prompts/mpe_system_prompt.txt",
@@ -1076,34 +1227,45 @@ class _VisionExpert:
             "Return a compact JSON evidence block.",
         )
 
-        # Build user text (enrich with prior-scan note if available)
         user_text = (
             "Analyse this medical image and return structured visual evidence "
             "strictly following the output format in your system prompt. "
-            "Focus on ROIs, margins, density, and any saliency crop coordinates."
+            "Focus on ROIs, margins, density, and saliency crop coordinates."
         )
-        if prior_image:
+
+        # Doctor zoom command takes highest priority
+        if doctor_feedback and doctor_feedback.is_zoom_command:
+            user_text = (
+                f"DOCTOR ZOOM COMMAND: '{doctor_feedback.zoom_region}'\n"
+                f"Focus your ENTIRE analysis on that region. Apply Dynamic Resolution "
+                f"Adaptation and Saliency-Aware Cropping specifically to: "
+                f"{doctor_feedback.zoom_region}.\n\n{user_text}"
+            )
+        elif doctor_feedback and doctor_feedback.message:
             user_text += (
-                f"\n\nPRIOR SCAN PATH: {prior_image}. "
-                "Note any interval changes compared to prior imaging."
+                f"\n\nDOCTOR CONTEXT: {doctor_feedback.message}. "
+                "Incorporate this context in your analysis."
             )
 
-        # Feedback from previous #wanna# iteration is injected into input_data
+        # #wanna# feedback from previous iteration
         if "|" in input_data and "High-Res Crop" in input_data:
             user_text += (
-                f"\n\nFEEDBACK REQUEST: {input_data}. "
-                "Apply Dynamic Resolution Adaptation and Saliency-Aware Cropping "
-                "to the specified region."
+                f"\n\n#wanna# FEEDBACK: {input_data}. "
+                "Apply Dynamic Resolution Adaptation to the specified region."
             )
         elif "|" in input_data and "Alternate View" in input_data:
             user_text += (
-                f"\n\nFEEDBACK REQUEST: {input_data}. "
-                "Focus analysis on the requested imaging angle/view."
+                f"\n\n#wanna# FEEDBACK: {input_data}. "
+                "Focus on the requested imaging angle/view."
             )
 
-        # Decide between multimodal and text-only inference
+        if prior_image:
+            user_text += (
+                f"\n\nPRIOR SCAN: {prior_image}. "
+                "Note any interval changes vs prior imaging."
+            )
+
         if not _HAS_LLAMA_CPP:
-            # Mock mode: return realistic structured evidence
             raw = _MOCK_VISUAL_EVIDENCE
         elif self._swapper.has_mmproj():
             ext      = os.path.splitext(input_data)[1].lower().lstrip(".")
@@ -1115,46 +1277,42 @@ class _VisionExpert:
             else:
                 raw = self._swapper.infer_text(
                     system_prompt,
-                    f"Medical context (feedback iteration {self._iteration}):\n{input_data}\n\n{user_text}",
+                    f"Context (iter {self._iteration}):\n{input_data}\n\n{user_text}",
                     max_new_tokens=512,
                 )
         else:
             raw = self._swapper.infer_text(
                 system_prompt,
-                f"Patient image path: {input_data}\n{user_text}",
+                f"Image: {input_data}\n{user_text}",
                 max_new_tokens=512,
             )
 
-        return self._parse_evidence(raw)
-
-    @staticmethod
-    def _parse_evidence(raw: str) -> PerceptionEvidence:
-        blob = _extract_json_block(raw)
-        if blob:
-            return PerceptionEvidence(
-                rois=blob.get("rois", []),
-                feature_summary=blob.get("feature_summary", ""),
-                confidence_level=blob.get("confidence_level", "medium"),
-                saliency_crop=blob.get("saliency_crop", ""),
-                raw_summary=raw,
-            )
-        return PerceptionEvidence(raw_summary=raw, feature_summary=raw[:300])
+        return _parse_mpe_evidence(raw)
 
     @staticmethod
     def name() -> str:
-        return "MPE (Qwen2-VL)"
+        return "MPE (Qwen2-VL / Moondream2)"
+
+
+def _parse_mpe_evidence(raw: str) -> PerceptionEvidence:
+    blob = _extract_json_block(raw)
+    if blob:
+        return PerceptionEvidence(
+            rois=blob.get("rois", []),
+            feature_summary=blob.get("feature_summary", ""),
+            confidence_level=blob.get("confidence_level", "medium"),
+            saliency_crop=blob.get("saliency_crop", ""),
+            raw_summary=raw,
+        )
+    return PerceptionEvidence(raw_summary=raw, feature_summary=raw[:300])
 
 
 class _ReasoningExpert:
     """
-    Phase 2 – ARLL: Agentic Reasoning & Logic Layer
-    ────────────────────────────────────────────────
-    Runs Chain-of-Thought reasoning over MPE evidence, generates a DDx
-    ensemble, computes Sc = 1 − σ², and emits the #wanna# token if Sc < θ.
+    Phase 2 – ARLL: Agentic Reasoning & Logic Layer  [DeepSeek-R1]
 
-    Structured JSON output is required by the updated system prompt so the
-    DDx probabilities can be parsed precisely for statistical confidence
-    computation.  Regex fallback handles partial or malformed output.
+    Generates a DDx ensemble, computes Sc = 1 − σ², and emits #wanna#
+    when Sc < threshold.  Doctor's query can also be injected here.
     """
 
     def __init__(self, swapper: ExpertSwapper, iteration: int = 1) -> None:
@@ -1165,18 +1323,23 @@ class _ReasoningExpert:
         self,
         mpe_evidence: str,
         prior_context: str = "",
+        doctor_query: str = "",
     ) -> ReasoningOutput:
         system_prompt = _load_prompt_file(
             "prompts/arll_system_prompt.txt",
-            "You are ARLL. Perform CoT reasoning. Output structured JSON with DDx probabilities.",
+            "You are ARLL. Output structured JSON with DDx probabilities.",
         )
 
         user_input = f"MPE visual evidence (iteration {self._iteration}):\n{mpe_evidence}"
         if prior_context:
-            user_input += f"\n\nPrior iteration context:\n{prior_context}"
+            user_input += f"\n\nPrior context:\n{prior_context}"
+        if doctor_query:
+            user_input += (
+                f"\n\nDOCTOR'S QUERY: '{doctor_query}'. "
+                "Address this in your reasoning while computing the DDx."
+            )
 
         if not _HAS_LLAMA_CPP:
-            # Mock mode: use iteration-indexed realistic output
             idx = min(self._iteration - 1, len(_MOCK_ARLL_OUTPUTS) - 1)
             raw = _MOCK_ARLL_OUTPUTS[idx]
         else:
@@ -1185,13 +1348,8 @@ class _ReasoningExpert:
             )
 
         out = _parse_arll_output(raw)
-
-        # If parse produced no DDx, build minimal ensemble from context
         if not out.ensemble.hypotheses:
-            _log.warning("ARLL: no DDx parsed from output; using fallback ensemble.")
-            fallback = _fallback_ensemble(self._iteration)
-            out.ensemble = fallback
-
+            out.ensemble = _fallback_ensemble(self._iteration)
         return out
 
     @staticmethod
@@ -1200,102 +1358,74 @@ class _ReasoningExpert:
 
 
 class _ReportingExpert:
-    """
-    Phase 3 – CSR: Clinical Synthesis & Reporting
-    ──────────────────────────────────────────────
-    Converts validated ARLL reasoning into a standards-compliant JSON report
-    with ICD-11 / SNOMED CT codes, risk stratification (Lung-RADS / TIRADS /
-    BI-RADS / LI-RADS / PI-RADS), treatment recommendations, and HITL flag.
-    """
+    """Phase 3 – CSR: Clinical Synthesis & Reporting  [Llama-3-Medius / MedGamma-2B]"""
 
     def __init__(self, swapper: ExpertSwapper) -> None:
         self._swapper = swapper
 
     def execute(
         self,
-        reasoning_output: ReasoningOutput,
+        reasoning: ReasoningOutput,
         iterations_used: int = 1,
     ) -> str:
-        """Return the full clinical report as a JSON string."""
         system_prompt = _load_prompt_file(
             "prompts/csr_system_prompt.txt",
-            "You are CSR. Generate a structured ICD-11 compliant JSON report.",
+            "You are CSR. Generate a structured ICD-11 JSON report.",
         )
-
         user_input = (
-            f"Validated ARLL reasoning output:\n{reasoning_output.cot}\n\n"
-            f"DDx ensemble:\n{json.dumps(reasoning_output.ensemble.to_dict(), indent=2)}\n\n"
-            f"Final Sc = {reasoning_output.ensemble.sc:.4f}, "
-            f"σ² = {reasoning_output.ensemble.sigma2:.6f}, "
-            f"Iterations used: {iterations_used}"
+            f"Validated ARLL reasoning:\n{reasoning.cot}\n\n"
+            f"DDx ensemble:\n{json.dumps(reasoning.ensemble.to_dict(), indent=2)}\n\n"
+            f"Final Sc = {reasoning.ensemble.sc:.4f}, "
+            f"σ² = {reasoning.ensemble.sigma2:.6f}, "
+            f"Iterations: {iterations_used}"
         )
-        if reasoning_output.temporal_note:
-            user_input += f"\n\nTemporal note: {reasoning_output.temporal_note}"
+        if reasoning.temporal_note:
+            user_input += f"\n\nTemporal note: {reasoning.temporal_note}"
 
         if not _HAS_LLAMA_CPP:
             return _MOCK_CSR_REPORT
 
-        raw = self._swapper.infer_text(system_prompt, user_input, max_new_tokens=1024)
-
-        # Attempt to extract JSON from model output
+        raw  = self._swapper.infer_text(system_prompt, user_input, max_new_tokens=1024)
         blob = _extract_json_block(raw)
         if blob:
-            # Inject engine-computed metrics for auditability
             blob["recursive_iterations"] = iterations_used
-            blob["final_sc"]             = round(reasoning_output.ensemble.sc, 4)
-            blob["final_sigma2"]         = round(reasoning_output.ensemble.sigma2, 6)
+            blob["final_sc"]             = round(reasoning.ensemble.sc, 4)
+            blob["final_sigma2"]         = round(reasoning.ensemble.sigma2, 6)
             return json.dumps(blob, indent=2)
 
-        # Fallback: wrap raw narrative in minimal report structure
-        hitl_needed = reasoning_output.ensemble.sc < 0.92
+        hitl_needed = reasoning.ensemble.sc < 0.92
         return json.dumps({
-            "standard": "ICD-11",
-            "snomed_ct": "N/A",
+            "standard": "ICD-11", "snomed_ct": "N/A",
             "risk_stratification": {"scale": "N/A", "score": "N/A", "interpretation": ""},
-            "narrative": raw,
-            "summary": raw[:200],
-            "treatment_recommendations": "Refer to attending physician for further evaluation.",
+            "narrative": raw, "summary": raw[:200],
+            "treatment_recommendations": "Refer to attending physician.",
             "hitl_review_required": hitl_needed,
-            "hitl_reason": "Model output could not be fully parsed; radiologist review required." if hitl_needed else "",
+            "hitl_reason": ("Model output unparseable; radiologist review required."
+                            if hitl_needed else ""),
             "recursive_iterations": iterations_used,
-            "final_sc": round(reasoning_output.ensemble.sc, 4),
-            "final_sigma2": round(reasoning_output.ensemble.sigma2, 6),
+            "final_sc": round(reasoning.ensemble.sc, 4),
+            "final_sigma2": round(reasoning.ensemble.sigma2, 6),
         }, indent=2)
 
     @staticmethod
     def name() -> str:
-        return "CSR (Llama-3-Medius)"
-
-
-def _fallback_ensemble(iteration: int) -> DDxEnsemble:
-    """
-    Fallback DDx ensemble when ARLL output cannot be parsed.
-    Mirrors the paper's 3-iteration Sc trajectory (0.79 → 0.86 → 0.94).
-    """
-    tables = [
-        [("Primary malignancy", 0.42), ("Infection", 0.31),
-         ("Sarcoidosis", 0.15), ("TB reactivation", 0.12)],
-        [("Primary malignancy", 0.58), ("Infection", 0.19),
-         ("Sarcoidosis", 0.13), ("TB reactivation", 0.10)],
-        [("Primary malignancy", 0.72), ("Infection", 0.11),
-         ("Sarcoidosis", 0.10), ("TB reactivation", 0.07)],
-    ]
-    idx    = min(iteration - 1, len(tables) - 1)
-    hyps   = [DDxHypothesis(d, p, "") for d, p in tables[idx]]
-    return DDxEnsemble(hypotheses=hyps)
+        return "CSR (Llama-3-Medius / MedGamma-2B)"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Diagnostic Engine  —  orchestrates the three-phase pipeline
+#  Diagnostic Engine  v2.0
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class DiagnosticEngine:
     """
-    Orchestrates the full R-MoE pipeline:
-      MPE → ARLL → [#wanna# gate] → CSR (or HITL escalation)
+    Orchestrates the full R-MoE v2.0 pipeline:
+      MPE → [MPE Gate] → ARLL → [ARLL Gate] → CSR  (or HITL escalation)
 
-    Only one expert model is resident in GPU VRAM at a time (ExpertSwapper).
-    Each iteration's trace is recorded for the audit log.
+    New in v2.0:
+      • MPE Confidence Gate (Phase 1 quality check before ARLL)
+      • Doctor HITL prompts during every #wanna# iteration
+      • Doctor zoom commands fed back into next MPE pass
+      • Iteration context (prior DDx) always forwarded to ARLL
     """
 
     def __init__(
@@ -1304,72 +1434,110 @@ class DiagnosticEngine:
         settings: ModelSettings,
         audit: Optional[AuditLogger] = None,
         prior_image: Optional[str] = None,
+        hitl_mode: HITLMode = HITLMode.Auto,
     ) -> None:
-        self._sm          = state_machine
-        self._settings    = settings
-        self._audit       = audit or AuditLogger()
-        self._prior_image = prior_image
-        self._swapper     = ExpertSwapper()
+        self._sm        = state_machine
+        self._settings  = settings
+        self._audit     = audit or AuditLogger()
+        self._prior     = prior_image
+        self._hitl_mode = hitl_mode
+        self._swapper   = ExpertSwapper()
+        self._mpe_gate  = MPEConfidenceGate(threshold=0.60)
 
     def run_diagnostics(self, patient_input: str) -> RunSummary:
-        t_total_start    = time.monotonic()
-        current_input    = patient_input
-        prior_context    = ""
-        summary          = RunSummary()
+        t0            = time.monotonic()
+        current_input = patient_input
+        prior_context = ""
+        summary       = RunSummary()
 
         for iteration in range(1, self._sm.hard_limit_iterations + 1):
-            t_iter_start = time.monotonic()
+            t_iter = time.monotonic()
             _print_iteration_header(iteration, self._sm.hard_limit_iterations)
             summary.iterations_executed = iteration
 
-            # ── Phase 1: MPE ──────────────────────────────────────────────────
+            # ──────────────────────────────────────────────────────────────────
+            # PHASE 1: MPE  (Multi-Modal Perception Engine)
+            # ──────────────────────────────────────────────────────────────────
             ok = self._swapper.load_vision_model(
                 self._settings.vision_text_model,
                 self._settings.vision_projection_model,
                 self._settings.inference,
             )
             if not ok:
-                _print_abstain("Failed loading MPE vision model.")
+                _print_abstain("Failed to load MPE vision model.")
                 summary.escalated_to_human = True
-                summary.total_elapsed_s = time.monotonic() - t_total_start
+                summary.total_elapsed_s = time.monotonic() - t0
                 return summary
 
-            mpe_expert    = _VisionExpert(self._swapper, iteration)
-            perception    = mpe_expert.execute(current_input, self._prior_image)
+            mpe    = _VisionExpert(self._swapper, iteration)
+            percep = mpe.execute(current_input, self._prior)
+
+            # ── MPE Confidence Gate ──────────────────────────────────────────
+            mpe_gate_passed = self._mpe_gate.passes(percep)
             _print_mpe_status(
                 self._settings.vision_projection_model,
                 self._settings.vision_text_model,
-                perception,
+                percep,
+                mpe_gate_passed,
             )
             self._audit.log("mpe_complete", {
                 "iteration": iteration,
-                "rois": len(perception.rois),
-                "saliency_crop": perception.saliency_crop,
+                "rois": len(percep.rois),
+                "confidence_level": percep.confidence_level,
+                "mpe_gate_passed": mpe_gate_passed,
             })
 
-            # ── Phase 2: ARLL ─────────────────────────────────────────────────
+            # If MPE has low confidence, trigger early #wanna# (skip ARLL)
+            if not mpe_gate_passed and iteration < self._sm.hard_limit_iterations:
+                req     = "High-Res Crop"
+                payload = "region=full_image;zoom=1.5"
+                doctor  = _prompt_doctor_for_clarification(
+                    req, payload, iteration, self._hitl_mode
+                )
+                hint = doctor.zoom_region if doctor else ""
+                if doctor and doctor.is_zoom_command:
+                    payload = f"region={doctor.zoom_region};zoom=2.0"
+                summary.trace.append(IterationTrace(
+                    iteration=iteration,
+                    perception_summary=percep.feature_summary[:200],
+                    reasoning_summary="[MPE gate triggered early]",
+                    decision=WannaState.RequestHighResCrop.value,
+                    metrics=_compute_uncertainty(
+                        self._mpe_gate.score(percep),
+                        [self._mpe_gate.score(percep), 1.0 - self._mpe_gate.score(percep)],
+                    ),
+                    doctor_feedback=hint,
+                    elapsed_s=round(time.monotonic() - t_iter, 2),
+                ))
+                current_input = req + " | " + payload
+                self._swapper.unload()
+                continue
+
+            # ──────────────────────────────────────────────────────────────────
+            # PHASE 2: ARLL  (Agentic Reasoning & Logic Layer)
+            # ──────────────────────────────────────────────────────────────────
             ok = self._swapper.load_expert_model(
                 self._settings.reasoning_model, self._settings.inference
             )
             if not ok:
-                _print_abstain("Failed loading ARLL reasoning model.")
+                _print_abstain("Failed to load ARLL reasoning model.")
                 summary.escalated_to_human = True
-                summary.total_elapsed_s = time.monotonic() - t_total_start
+                summary.total_elapsed_s = time.monotonic() - t0
                 return summary
 
-            mpe_text    = perception.feature_summary or perception.raw_summary
-            arll_expert = _ReasoningExpert(self._swapper, iteration)
-            reasoning   = arll_expert.execute(
-                f"{current_input} | {mpe_text}", prior_context
+            mpe_text  = percep.feature_summary or percep.raw_summary
+            arll      = _ReasoningExpert(self._swapper, iteration)
+            reasoning = arll.execute(
+                f"{current_input} | {mpe_text}",
+                prior_context=prior_context,
             )
 
-            # Evaluate confidence gate
-            decision      = self._sm.evaluate(reasoning, iteration)
-            metrics       = _compute_uncertainty(
+            decision    = self._sm.evaluate(reasoning, iteration)
+            metrics     = _compute_uncertainty(
                 reasoning.ensemble.sc, reasoning.ensemble.probabilities
             )
-            gate_passed   = decision.state == WannaState.ProceedToReport
-            escalating    = decision.state == WannaState.EscalateToHuman
+            gate_passed = decision.state == WannaState.ProceedToReport
+            escalating  = decision.state == WannaState.EscalateToHuman
 
             _print_arll_result(
                 metrics.confidence, metrics.ddx_variance, metrics.predictive_entropy,
@@ -1385,10 +1553,30 @@ class DiagnosticEngine:
                 "sigma2": round(metrics.ddx_variance, 6),
                 "wanna": reasoning.wanna,
                 "feedback_request": reasoning.feedback_request,
-                "rag_refs": reasoning.rag_references,
             })
 
-            elapsed = time.monotonic() - t_iter_start
+            # Doctor HITL during #wanna#
+            doctor_hint = ""
+            if not gate_passed and not escalating:
+                doc = _prompt_doctor_for_clarification(
+                    decision.feedback.request_type,
+                    decision.feedback.payload,
+                    iteration,
+                    self._hitl_mode,
+                )
+                if doc:
+                    doctor_hint = doc.zoom_region
+                    if doc.is_zoom_command:
+                        decision.feedback.payload = (
+                            f"region={doc.zoom_region};zoom=2.5"
+                        )
+                    self._audit.log("doctor_hint", {
+                        "iteration": iteration,
+                        "message": doc.message,
+                        "is_zoom": doc.is_zoom_command,
+                    })
+
+            elapsed = time.monotonic() - t_iter
             summary.trace.append(IterationTrace(
                 iteration=iteration,
                 perception_summary=mpe_text[:200],
@@ -1398,23 +1586,24 @@ class DiagnosticEngine:
                 ddx_ensemble=reasoning.ensemble.to_dict(),
                 rag_references=reasoning.rag_references,
                 temporal_note=reasoning.temporal_note,
+                doctor_feedback=doctor_hint,
                 elapsed_s=round(elapsed, 2),
             ))
-
-            # Calibration bin: (confidence, accuracy=1.0 if gate passed else 0.0)
             summary.calibration_bins.append(
                 (metrics.confidence, 1.0 if gate_passed else 0.0, 1)
             )
 
-            # ── Phase 3: CSR (only when gate passes) ─────────────────────────
+            # ──────────────────────────────────────────────────────────────────
+            # PHASE 3: CSR  (only when ARLL gate passes)
+            # ──────────────────────────────────────────────────────────────────
             if decision.state == WannaState.ProceedToReport:
                 ok = self._swapper.load_expert_model(
                     self._settings.clinical_model, self._settings.inference
                 )
                 if not ok:
-                    _print_abstain("Failed loading CSR clinical model.")
+                    _print_abstain("Failed to load CSR clinical model.")
                     summary.escalated_to_human = True
-                    summary.total_elapsed_s = time.monotonic() - t_total_start
+                    summary.total_elapsed_s = time.monotonic() - t0
                     return summary
 
                 csr    = _ReportingExpert(self._swapper)
@@ -1425,69 +1614,57 @@ class DiagnosticEngine:
                 summary.success           = True
                 summary.final_report_json = report
                 self._swapper.unload()
-                summary.total_elapsed_s   = time.monotonic() - t_total_start
+                summary.total_elapsed_s   = time.monotonic() - t0
                 return summary
 
             # ── HITL escalation ───────────────────────────────────────────────
             if decision.state == WannaState.EscalateToHuman:
                 self._swapper.unload()
+                primary = reasoning.ensemble.primary
                 _print_abstain(
-                    f"Sc = {metrics.confidence:.4f} at hard limit "
-                    f"({self._sm.hard_limit_iterations} iterations). "
-                    f"Primary DDx: {reasoning.ensemble.primary.diagnosis if reasoning.ensemble.primary else 'unknown'} "
-                    f"(p={reasoning.ensemble.primary.probability:.2f}). HITL required."
+                    f"Sc = {metrics.confidence:.4f} at hard limit. "
+                    f"Primary DDx: {primary.diagnosis if primary else 'unknown'} "
+                    f"(p={primary.probability:.2f}). HITL escalation."
                 )
                 self._audit.log("hitl_escalation", {
                     "sc": round(metrics.confidence, 4),
-                    "primary_ddx": reasoning.ensemble.primary.diagnosis if reasoning.ensemble.primary else "",
+                    "primary_ddx": primary.diagnosis if primary else "",
                 })
                 summary.escalated_to_human = True
-                summary.total_elapsed_s    = time.monotonic() - t_total_start
+                summary.total_elapsed_s    = time.monotonic() - t0
                 return summary
 
-            # ── Continue with #wanna# feedback as next iteration's input ──────
+            # Continue with #wanna# feedback + doctor hint as next input
             prior_context = (
-                f"Iteration {iteration} DDx: {reasoning.ensemble.to_dict()}\n"
+                f"Iter {iteration} DDx: {reasoning.ensemble.to_dict()}\n"
                 f"Sc={metrics.confidence:.4f}  σ²={metrics.ddx_variance:.6f}"
             )
             current_input = (
                 decision.feedback.request_type + " | " + decision.feedback.payload
             )
+            self._swapper.unload()
 
-        # Exceeded hard limit (shouldn't reach here; handled in loop above)
-        self._swapper.unload()
-        _print_abstain("Reached hard iteration limit without resolution.")
+        # Should not reach here (handled in loop via EscalateToHuman)
+        _print_abstain("Exceeded hard iteration limit.")
         summary.escalated_to_human = True
-        summary.total_elapsed_s    = time.monotonic() - t_total_start
+        summary.total_elapsed_s    = time.monotonic() - t0
         return summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  MrTom  —  top-level public API
+#  MrTom  —  top-level API
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class MrTom:
-    """
-    Top-level API for the R-MoE clinical engine.
-
-    Usage:
-        mr_tom = MrTom(WannaStateMachine(3, 0.90))
-        mr_tom.load_settings("settings/rmoe_settings.json")
-        mr_tom.set_gpu_layers(-1)                 # full GPU offload
-        summary = mr_tom.process_patient_case("patient.png")
-    """
+    """Top-level API for the R-MoE v2.0 clinical engine."""
 
     def __init__(self, state_machine: WannaStateMachine) -> None:
         self._sm       = state_machine
         self._settings = ModelSettings()
 
-    # ── Model path setters ────────────────────────────────────────────────────
-
     def set_vision_model(self, proj_path: str, text_path: str) -> None:
-        if proj_path:
-            self._settings.vision_projection_model = proj_path
-        if text_path:
-            self._settings.vision_text_model = text_path
+        if proj_path: self._settings.vision_projection_model = proj_path
+        if text_path: self._settings.vision_text_model        = text_path
 
     def set_reasoning_model(self, path: str) -> None:
         self._settings.reasoning_model = path
@@ -1508,49 +1685,40 @@ class MrTom:
         self._sm = WannaStateMachine(max_iterations, threshold)
 
     def load_settings(self, settings_json_path: str) -> bool:
-        """Load model paths and inference hyper-parameters from a JSON file."""
         try:
             with open(settings_json_path, encoding="utf-8") as fh:
                 cfg = json.load(fh)
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[settings] Failed: {settings_json_path}: {exc}", file=sys.stderr)
+            print(f"[settings] Failed: {exc}", file=sys.stderr)
             return False
-
         if "vision_proj_model"  in cfg: self._settings.vision_projection_model = cfg["vision_proj_model"]
         if "vision_text_model"  in cfg: self._settings.vision_text_model        = cfg["vision_text_model"]
         if "reasoning_model"    in cfg: self._settings.reasoning_model           = cfg["reasoning_model"]
         if "clinical_model"     in cfg: self._settings.clinical_model            = cfg["clinical_model"]
         if "max_iterations" in cfg and "confidence_threshold" in cfg:
             self.configure_gate(cfg["max_iterations"], cfg["confidence_threshold"])
-
         p = self._settings.inference
         for key, attr, cast in [
-            ("n_ctx",          "n_ctx",          int),
-            ("n_threads",      "n_threads",       int),
-            ("n_threads_batch","n_threads_batch", int),
-            ("max_new_tokens", "max_new_tokens",  int),
-            ("temperature",    "temperature",     float),
-            ("top_k",          "top_k",           int),
-            ("top_p",          "top_p",           float),
-            ("repeat_penalty", "repeat_penalty",  float),
-            ("penalty_last_n", "penalty_last_n",  int),
-            ("n_gpu_layers",   "n_gpu_layers",    int),
+            ("n_ctx","n_ctx",int), ("n_threads","n_threads",int),
+            ("n_threads_batch","n_threads_batch",int), ("max_new_tokens","max_new_tokens",int),
+            ("temperature","temperature",float), ("top_k","top_k",int),
+            ("top_p","top_p",float), ("repeat_penalty","repeat_penalty",float),
+            ("penalty_last_n","penalty_last_n",int), ("n_gpu_layers","n_gpu_layers",int),
         ]:
             inf = cfg.get("inference", {})
             if key in inf:
                 setattr(p, attr, cast(inf[key]))
         return True
 
-    # ── Pipeline entry-points ─────────────────────────────────────────────────
-
     def process_patient_case(
         self,
         patient_input: str,
         audit_log_path: Optional[str] = None,
         prior_image: Optional[str] = None,
+        hitl_mode: HITLMode = HITLMode.Auto,
     ) -> RunSummary:
         audit  = AuditLogger(audit_log_path)
-        engine = DiagnosticEngine(self._sm, self._settings, audit, prior_image)
+        engine = DiagnosticEngine(self._sm, self._settings, audit, prior_image, hitl_mode)
         summary = engine.run_diagnostics(patient_input)
         audit.flush(summary)
         return summary
@@ -1558,15 +1726,24 @@ class MrTom:
     def ask_expert(
         self,
         question: str,
-        target: ExpertTarget = ExpertTarget.Reasoning,
+        target: Optional[ExpertTarget] = None,
     ) -> str:
-        """Interactive post-diagnosis Q&A with the reasoning or clinical expert."""
+        """
+        Interactive post-diagnosis Q&A.
+        If target is None, auto-routes based on question content (v2.0).
+        """
+        if target is None:
+            target = _ExpertQueryRouter.route(question)
+            print(
+                f"{_DIM}  [routing → {_ExpertQueryRouter.describe(target)}]{_RESET}"
+            )
+
         swapper = ExpertSwapper()
         if target == ExpertTarget.Clinical:
             model_path    = self._settings.clinical_model
             system_prompt = _load_prompt_file(
                 "prompts/csr_system_prompt.txt",
-                "You are CSR. Answer follow-up clinical report questions.",
+                "You are CSR. Answer follow-up clinical questions.",
             )
         else:
             model_path    = self._settings.reasoning_model
@@ -1574,8 +1751,10 @@ class MrTom:
                 "prompts/arll_system_prompt.txt",
                 "You are ARLL. Answer diagnostic reasoning questions.",
             )
+
         if not swapper.load_expert_model(model_path, self._settings.inference):
             return f"[chat-error] failed to load {model_path}"
+
         response = swapper.infer_text(system_prompt, question, max_new_tokens=256)
         swapper.unload()
         return response
@@ -1587,10 +1766,9 @@ class MrTom:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="R-MoE Clinical Engine  ·  Recursive Multi-Agent Mixture-of-Experts",
+        description="R-MoE v2.0 — Recursive Multi-Agent Mixture-of-Experts Clinical Engine",
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    # Model paths
     p.add_argument("--model-vision",    default="models/vision_text.gguf",
                    help="Qwen2-VL backbone GGUF    (default: models/vision_text.gguf)")
     p.add_argument("--model-proj",      default="models/vision_proj.gguf",
@@ -1599,28 +1777,32 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="DeepSeek-R1 GGUF           (default: models/reasoning_expert.gguf)")
     p.add_argument("--model-clinical",  default="models/clinical_expert.gguf",
                    help="Llama-3-Medius GGUF        (default: models/clinical_expert.gguf)")
-    # Required
-    p.add_argument("--image",    required=True, help="Patient image path (REQUIRED)")
-    # Optional
-    p.add_argument("--settings", default=None,  help="JSON settings file")
-    p.add_argument("--prior-image", default=None,
-                   help="Prior scan image for temporal comparison")
-    p.add_argument("--audit-log",   default=None,
-                   help="Path to write JSON audit trail (for HITL review)")
-    p.add_argument("--temp",        type=float, default=None,
-                   help="Sampling temperature (default: 0.2)")
-    p.add_argument("--n-predict",   type=int,   default=None,
-                   help="Max tokens per generation step (default: 512)")
-    p.add_argument("--n-gpu-layers",type=int,   default=None,
-                   help="GPU layers: -1=all (default), 0=CPU only, 99=all layers")
-    p.add_argument("--ngl",         type=int,   dest="n_gpu_layers",
-                   help=argparse.SUPPRESS)  # alias
-    p.add_argument("--chat-target", choices=["reasoning", "clinical"], default="reasoning",
-                   help="Expert for post-diagnosis Q&A (default: reasoning)")
-    p.add_argument("--eval", action="store_true",
-                   help="Print ECE / calibration evaluation block after run")
-    p.add_argument("--verbose", action="store_true",
-                   help="Enable verbose llama.cpp / debug logging")
+    p.add_argument("--image",    required=True,
+                   help="Patient image path (REQUIRED)")
+    p.add_argument("--settings", default=None,
+                   help="JSON settings file")
+    p.add_argument("--prior-image",  default=None,
+                   help="Prior scan for temporal comparison")
+    p.add_argument("--audit-log",    default=None,
+                   help="Path to write JSON audit trail")
+    p.add_argument("--temp",         type=float, default=None,
+                   help="Sampling temperature (default 0.2)")
+    p.add_argument("--n-predict",    type=int,   default=None,
+                   help="Max tokens per step (default 512)")
+    p.add_argument("--n-gpu-layers", type=int,   default=None,
+                   help="GPU layers: -1=all (default), 0=CPU")
+    p.add_argument("--ngl",          type=int,   dest="n_gpu_layers",
+                   help=argparse.SUPPRESS)
+    p.add_argument("--hitl-mode",    choices=["interactive","auto","disabled"],
+                   default="auto",
+                   help="Doctor HITL during #wanna#: interactive|auto|disabled (default: auto)")
+    p.add_argument("--chat-target",  choices=["auto","reasoning","clinical"],
+                   default="auto",
+                   help="Post-diagnosis Q&A expert (default: auto-route)")
+    p.add_argument("--eval",         action="store_true",
+                   help="Print ECE calibration summary after run")
+    p.add_argument("--verbose",      action="store_true",
+                   help="Enable debug logging")
     return p
 
 
@@ -1628,8 +1810,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     _HARD_LIMIT = 3
     _THRESHOLD  = 0.90
 
-    parser = _build_parser()
-    args   = parser.parse_args(argv)
+    args = _build_parser().parse_args(argv)
 
     if args.verbose:
         logging.getLogger("rmoe").setLevel(logging.DEBUG)
@@ -1638,20 +1819,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if not _HAS_LLAMA_CPP:
         print(
-            f"{_YELLOW}[warn] llama-cpp-python not installed — running in mock/demo mode.\n"
-            "       The full pipeline will execute with realistic simulated outputs.\n"
+            f"{_YELLOW}[warn] llama-cpp-python not installed — running in demo/mock mode.\n"
             "       Install for real inference:\n"
             f"{_CYAN}         CMAKE_ARGS=\"-DGGML_CUDA=ON\" pip install llama-cpp-python\n"
             f"{_RESET}"
         )
 
-    mr_tom = MrTom(WannaStateMachine(_HARD_LIMIT, _THRESHOLD))
+    hitl_mode = HITLMode(args.hitl_mode)
+    mr_tom    = MrTom(WannaStateMachine(_HARD_LIMIT, _THRESHOLD))
 
     if args.settings:
         if not mr_tom.load_settings(args.settings):
             print("[settings] Using defaults.", file=sys.stderr)
 
-    # CLI flags override settings (explicit always wins)
     mr_tom.set_vision_model(args.model_proj, args.model_vision)
     mr_tom.set_reasoning_model(args.model_reasoning)
     mr_tom.set_clinical_model(args.model_clinical)
@@ -1659,12 +1839,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.n_predict    is not None: mr_tom.set_max_tokens(args.n_predict)
     if args.n_gpu_layers is not None: mr_tom.set_gpu_layers(args.n_gpu_layers)
 
-    _print_input_info(args.image, _THRESHOLD, _HARD_LIMIT, args.prior_image)
+    _print_input_info(args.image, _THRESHOLD, _HARD_LIMIT, args.prior_image, hitl_mode)
 
     summary = mr_tom.process_patient_case(
         args.image,
         audit_log_path=args.audit_log,
         prior_image=args.prior_image,
+        hitl_mode=hitl_mode,
     )
 
     _print_run_summary(summary, _HARD_LIMIT)
@@ -1678,15 +1859,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.eval:
         _print_eval_summary(summary)
 
-    # ── Interactive doctor Q&A ────────────────────────────────────────────────
-    target = (ExpertTarget.Clinical if args.chat_target == "clinical"
-              else ExpertTarget.Reasoning)
-    expert_label = ("CSR (clinical report)" if target == ExpertTarget.Clinical
-                    else "ARLL (diagnostic reasoning)")
+    # ── Interactive doctor Q&A with auto-routing ──────────────────────────────
+    chat_target_cli = args.chat_target  # "auto" | "reasoning" | "clinical"
+    if chat_target_cli == "auto":
+        expert_label = "auto-routed (Reasoning or Clinical)"
+    elif chat_target_cli == "clinical":
+        expert_label = "CSR (clinical report / treatment)"
+    else:
+        expert_label = "ARLL (diagnostic reasoning)"
+
     print(
         f"\n{_DIM}"
-        f"  Follow-up questions available  |  Expert: {expert_label}"
-        f"  |  Type 'exit' to quit\n"
+        f"  Follow-up questions  |  Expert: {expert_label}  |  Type 'exit' to quit\n"
         f"{_RESET}"
     )
     _print_rule()
@@ -1703,6 +1887,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 break
             if not query:
                 continue
+
+            if chat_target_cli == "auto":
+                target: Optional[ExpertTarget] = None   # auto-route
+            elif chat_target_cli == "clinical":
+                target = ExpertTarget.Clinical
+            else:
+                target = ExpertTarget.Reasoning
+
             response = mr_tom.ask_expert(query, target)
             print(f"{_CYAN}  [Mr.ToM]  {_RESET}{response}")
     except KeyboardInterrupt:

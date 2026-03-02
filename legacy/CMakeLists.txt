@@ -5,14 +5,24 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ── GPU / CUDA support ────────────────────────────────────────────────────────
-# Pass -DGGML_CUDA=ON (or LLAMA_CUDA=ON for older llama.cpp) to enable CUDA.
-# In Google Colab with a GPU runtime, build with:
-#   cmake -S /content/Mr.ToM -B /content/Mr.ToM/build \
-#         -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON
-#   cmake --build /content/Mr.ToM/build --config Release -j4
-# Then pass --n-gpu-layers 99 at runtime (or set n_gpu_layers=99 in settings).
+# ── NOTE ──────────────────────────────────────────────────────────────────────
+# This is the LEGACY C++ engine.  The primary engine is now the Python
+# implementation: engine.py (project root).
+#
+# Sources live in  legacy/src/  and headers in  legacy/include/.
+# The llama.cpp submodule remains at the project root (../llama.cpp).
+#
+# Build from the project root (one level above this file):
+#   cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release
+#   cmake --build legacy/build --config Release -j4
+#
+# GPU build (CUDA):
+#   cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON
+#   cmake --build legacy/build --config Release -j4
 # ─────────────────────────────────────────────────────────────────────────────
+
+# The llama.cpp submodule is at the project root, one level above legacy/.
+set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../llama.cpp")
 
 add_executable(rmoe_engine
     src/main.cpp
@@ -36,12 +46,11 @@ if(nlohmann_json_FOUND)
     target_link_libraries(rmoe_engine PRIVATE nlohmann_json::nlohmann_json)
 endif()
 
-# llama.cpp backend integration (expects llama.cpp as a subdirectory)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/CMakeLists.txt")
-    # common utils are required by the mtmd CLI tools bundled with llama.cpp
+# llama.cpp backend integration
+if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
     set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build llama.cpp common utils (required for mtmd)" FORCE)
-    add_subdirectory(llama.cpp)
-    target_include_directories(rmoe_engine PRIVATE llama.cpp/include)
+    add_subdirectory("${LLAMA_CPP_DIR}" llama_cpp_build)
+    target_include_directories(rmoe_engine PRIVATE "${LLAMA_CPP_DIR}/include")
 
     if(TARGET llama)
         target_link_libraries(rmoe_engine PRIVATE llama)
@@ -53,18 +62,14 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/CMakeLists.txt")
     endif()
 
     # mtmd: multimodal (CLIP + LLM vision) support
-    # The CLIP mmproj model (vision_proj.gguf) is loaded via mtmd_init_from_file,
-    # NOT via llama_model_load_from_file which rejects CLIP architectures.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/tools/mtmd/CMakeLists.txt" AND TARGET llama)
-        # LLAMA_INSTALL_VERSION is set inside the llama.cpp sub-scope and is not
-        # propagated to our root scope, so provide a fallback before adding mtmd.
+    if(EXISTS "${LLAMA_CPP_DIR}/tools/mtmd/CMakeLists.txt" AND TARGET llama)
         if(NOT DEFINED LLAMA_INSTALL_VERSION)
             set(LLAMA_INSTALL_VERSION "0.0.0")
         endif()
-        add_subdirectory(llama.cpp/tools/mtmd)
+        add_subdirectory("${LLAMA_CPP_DIR}/tools/mtmd" mtmd_build)
         if(TARGET mtmd)
             target_link_libraries(rmoe_engine PRIVATE mtmd)
-            target_include_directories(rmoe_engine PRIVATE llama.cpp/tools/mtmd)
+            target_include_directories(rmoe_engine PRIVATE "${LLAMA_CPP_DIR}/tools/mtmd")
             target_compile_definitions(rmoe_engine PRIVATE RMOE_HAS_MTMD=1)
         endif()
     endif()

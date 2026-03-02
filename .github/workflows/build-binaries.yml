@@ -1,18 +1,18 @@
-name: Build and Release R-MoE
+name: Build and Release R-MoE (Legacy C++ Engine)
 
 on:
   push:
     branches:
       - "**"
     tags:
-      - "v*" # උදා: v0.91, v1.0.0 වගේ tag එකක් push කරපු ගමන් වැඩේ පටන් ගන්නවා
+      - "v*"
 
 jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write # Bot එකට Release එකක් හදන්න අවසර දෙනවා
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -27,23 +27,22 @@ jobs:
       - name: Configure & Build (Linux)
         if: runner.os == 'Linux'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release -j 4
+          cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build legacy/build --config Release -j 4
           mkdir -p dist
-          cp build/rmoe_engine dist/rmoe_engine-linux
+          cp legacy/build/rmoe_engine dist/rmoe_engine-linux
 
       - name: Configure & Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release
+          cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build legacy/build --config Release
           New-Item -ItemType Directory -Force -Path dist
-          # Build artifacts කොහේ තිබුණත් dist එකට ගන්නවා
-          if (Test-Path "build/Release/rmoe_engine.exe") {
-            Copy-Item "build/Release/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
+          if (Test-Path "legacy/build/Release/rmoe_engine.exe") {
+            Copy-Item "legacy/build/Release/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
           } else {
-            Copy-Item "build/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
+            Copy-Item "legacy/build/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
           }
 
       - name: Auto-Release by GitHub Bot
@@ -55,13 +54,16 @@ jobs:
           body: |
             ### 🩺 R-MoE Diagnostic Engine (v0.1)
             Automated Build by GitHub Actions Bot.
-            
+
+            **Primary engine:** Python (`engine.py`) — run with `python engine.py --image patient.png`
+            **Legacy C++ engine:** included as pre-built binaries below.
+
             **Included Binaries:**
             - Linux (Ubuntu)
             - Windows (x64)
-            
+
             **Commit:** ${{ github.sha }}
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # මෙන්න Bot එක පාවිච්චි කරන Token එක
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
