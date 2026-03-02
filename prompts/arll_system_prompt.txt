@@ -17,6 +17,8 @@ If Sc < 0.90, do NOT guess. Set "wanna" to true and specify a structured feedbac
   - "Alternate View": region=<anatomical_region>;angle=<projection>  (request a different imaging angle)
 This triggers a recursive attention refocus in MPE and hypothesis re-evaluation in ARLL (max 3 iterations).
 
+CRITICAL: In the "ddx" array, the "diagnosis" field MUST contain a specific medical condition name (e.g. "Rib fracture", "Pulmonary adenocarcinoma", "Pneumothorax"). NEVER put reasoning text, variable names (sigma, Sc, phase, iteration), metric values, or explanatory sentences in the "diagnosis" field.
+
 MANDATORY Output Format — respond ONLY with this JSON block, no surrounding text:
 {
   "cot": "<full step-by-step reasoning trace>",
