@@ -85,31 +85,53 @@ all model gguf files can be access from here - https://drive.google.com/drive/fo
 
 ## Build & Run
 ```bash
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 
-# Full runtime argument mode
+# Full runtime argument mode (new-style flags)
 ./build/rmoe_engine \
-  --vision-proj models/vision_proj.gguf \
-  --vision-text models/vision_text.gguf \
-  --reasoning models/reasoning_expert.gguf \
-  --clinical models/clinical_expert.gguf \
-  --image patient_intake/chest_xray_ap_view.png
+  --model-vision   models/vision_text.gguf \
+  --model-proj     models/vision_proj.gguf \
+  --model-reasoning models/reasoning_expert.gguf \
+  --model-clinical  models/clinical_expert.gguf \
+  --image          models/test_patient.png \
+  --temp 0.6 --n-predict 512
 
 # With settings override
 ./build/rmoe_engine \
   --settings settings/rmoe_settings.json \
-  --image patient_intake/chest_xray_ap_view.png
+  --image models/test_patient.png
 ```
 
+## Google Colab quick-start
+```python
+# 1. Clone and build
+!git clone --recurse-submodules https://github.com/dill-lk/Mr.ToM /content/Mr.ToM
+!cmake -S /content/Mr.ToM -B /content/Mr.ToM/build -DCMAKE_BUILD_TYPE=Release
+!cmake --build /content/Mr.ToM/build --config Release -j4
+
+# 2. Put your GGUF files in MyDrive/Medical_MoE_Models/ then run:
+%run /content/Mr.ToM/colab_runner.py
+```
+
+The launcher (`colab_runner.py`) automatically mounts Google Drive, copies the
+model files into `/content/models/`, and runs the engine with the right flags.
+See the script's docstring for custom temperature, token-budget, and image-path
+options.
+
 ## CLI flags
-- `--vision-proj <path>`
-- `--vision-text <path>`
-- `--reasoning <path>`
-- `--clinical <path>`
-- `--image <path>` (**required**)
-- `--settings <json>`
-- `--chat-target reasoning|clinical` (default: `reasoning`)
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--model-vision <path>` | `--vision-text` | Vision LLM (`vision_text.gguf`) |
+| `--model-proj <path>` | `--vision-proj` | CLIP mmproj (`vision_proj.gguf`) |
+| `--model-reasoning <path>` | `--reasoning` | ARLL model (`reasoning_expert.gguf`) |
+| `--model-clinical <path>` | `--clinical` | CSR model (`clinical_expert.gguf`) |
+| `--image <path>` | | Patient image (**required**) |
+| `--temp <f>` | `--temperature` | Sampling temperature (default 0.2) |
+| `--n-predict <n>` | `--n_predict` | Max tokens to generate (default 128) |
+| `--settings <json>` | | JSON settings file (loaded before CLI flags) |
+| `--chat-target reasoning\|clinical` | | Post-diagnosis chat expert (default: reasoning) |
 
 ## Interactive doctor chat
 After diagnosis completes, terminal enters chat mode:
