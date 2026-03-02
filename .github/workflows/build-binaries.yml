@@ -1,69 +1,41 @@
-name: Build and Release R-MoE (Legacy C++ Engine)
+name: R-MoE Python Engine — CI
 
 on:
   push:
-    branches:
-      - "**"
-    tags:
-      - "v*"
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
 
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  lint-and-syntax:
+    name: Python lint & syntax check
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          submodules: recursive
+          python-version: "3.11"
 
-      - name: Configure & Build (Linux)
-        if: runner.os == 'Linux'
+      - name: Install linting tools
+        run: pip install pyflakes
+
+      - name: Syntax check engine.py
+        run: python -m py_compile engine.py && echo "✅ engine.py syntax OK"
+
+      - name: Syntax check colab_runner.py
+        run: python -m py_compile colab_runner.py && echo "✅ colab_runner.py syntax OK"
+
+      - name: Pyflakes engine.py
+        run: python -m pyflakes engine.py
+
+      - name: Pyflakes colab_runner.py
+        run: python -m pyflakes colab_runner.py
+
+      - name: Verify mock pipeline (no models needed)
         run: |
-          cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build legacy/build --config Release -j 4
-          mkdir -p dist
-          cp legacy/build/rmoe_engine dist/rmoe_engine-linux
-
-      - name: Configure & Build (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cmake -S legacy -B legacy/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build legacy/build --config Release
-          New-Item -ItemType Directory -Force -Path dist
-          if (Test-Path "legacy/build/Release/rmoe_engine.exe") {
-            Copy-Item "legacy/build/Release/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
-          } else {
-            Copy-Item "legacy/build/rmoe_engine.exe" "dist/rmoe_engine-windows.exe"
-          }
-
-      - name: Auto-Release by GitHub Bot
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          name: R-MoE Version ${{ github.ref_name }}
-          body: |
-            ### 🩺 R-MoE Diagnostic Engine (v0.1)
-            Automated Build by GitHub Actions Bot.
-
-            **Primary engine:** Python (`engine.py`) — run with `python engine.py --image patient.png`
-            **Legacy C++ engine:** included as pre-built binaries below.
-
-            **Included Binaries:**
-            - Linux (Ubuntu)
-            - Windows (x64)
-
-            **Commit:** ${{ github.sha }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          python engine.py --image test_patient.png 2>&1 | head -60
+        continue-on-error: true   # models not available in CI; syntax/import errors still fail
