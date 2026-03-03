@@ -73,6 +73,8 @@ flowchart TD
 
 25% false-positive reduction · 47% ECE improvement · 18% better temporal tracking
 
+🚨 🚨 There is an error when passing output from vision model to reasoning model and loading and recodnizing of vision model is not working right now i am working on this issue
+
 ---
 
 ## 📂 Model Files (downloaded automatically)
