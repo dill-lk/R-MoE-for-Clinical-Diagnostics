@@ -7,8 +7,11 @@
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](#installation)
 [![License](https://img.shields.io/badge/license-Apache-green)](#license)
 [![Paper](https://img.shields.io/badge/paper-PDF-blue)](paper/R_MoE.pdf)
+[![Release](https://img.shields.io/github/v/release/dill-lk/R-MoE-for-Clinical-Diagnostics?include_prereleases)](https://github.com/dill-lk/R-MoE-for-Clinical-Diagnostics/releases)
 
 *High-performance Recursive Multi-Agent Mixture-of-Experts Framework for Clinical Diagnostics*
+
+📄 **[Read the Paper](paper/R_MoE.pdf)** | 🚀 **[Download Releases](https://github.com/dill-lk/R-MoE-for-Clinical-Diagnostics/releases)**
 
 </div>
 
@@ -36,29 +39,49 @@ R-MoE addresses *diagnostic hallucinations* in medical AI by replacing monolithi
 vision-language models with a **three-phase recursive agent pipeline** that mimics
 the dual-process cognitive workflow of human radiologists.
 
-### Architecture
+### Pipeline Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                          R-MoE Engine                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │     MPE      │───▶│     ARLL     │───▶│     CSR      │      │
-│  │  Perception  │    │  Reasoning   │    │  Clinical    │      │
-│  │  (Vision)    │    │  (Logic)     │    │  (Synthesis) │      │
-│  └──────────────┘    └──────┬───────┘    └──────────────┘      │
-│                             │                                   │
-│                      ┌──────┴───────┐                          │
-│                      │ #wanna#      │                          │
-│                      │ Protocol     │                          │
-│                      │ Sc ≥ 0.90?   │                          │
-│                      └──────────────┘                          │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  🔌 Providers: OpenAI │ Anthropic │ Google │ Azure │ Groq     │
-│                Together │ Mistral │ Ollama │ OpenRouter        │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    INPUT["📥 DICOM / PNG Input<br/>+ Clinical Notes"]:::input
+
+    DOCTOR_UPLOAD["👨‍⚕️ Doctor Upload /<br/>Zoom Command"]:::hitl
+
+    MPE["🔬 Phase 1 · MPE — Perception<br/>Moondream2 / Qwen2-VL<br/>─────────────────────<br/>• Dynamic Resolution Adaptation<br/>• Visual Token Merger<br/>• Saliency-Aware Crop<br/>• DICOM Windowing<br/>• MCV Builder"]:::phase
+
+    ARLL["🧠 Phase 2 · ARLL — Reasoning<br/>DeepSeek-R1-Distill<br/>─────────────────────<br/>• Chain-of-Thought (CoT)<br/>• DDx Ensemble  Sc = 1−σ²<br/>• Vector RAG (BM25)<br/>• Cognitive Bias Detector<br/>• Temporal Comparator"]:::phase
+
+    DOCTOR_QUERY["👨‍⚕️ Doctor Query<br/>'Explain this'"]:::hitl
+
+    GATE{"Sc ≥ 0.90?"}:::gate
+
+    CSR["📋 Phase 3 · CSR — Clinical Synthesis<br/>MedGemma-2B<br/>─────────────────────<br/>• ICD-11 / SNOMED CT<br/>• TIRADS / BI-RADS / Lung-RADS<br/>• Dual-Layer Safety Validator<br/>• HITL Radiologist Flag"]:::phase
+
+    WANNA["🔁 Wanna Protocol<br/>max 3 iterations<br/>─────────────────────<br/>1. High-Res Crop<br/>2. Alternate View<br/>3. Modality Escalation<br/>CXR→CT→MRI→PET-CT"]:::loop
+
+    ESCALATE["🚨 Escalate to Human<br/>if still uncertain"]:::escalate
+
+    REPORT["📄 Final Report<br/>+ Audit Trail<br/>+ Session Report"]:::output
+
+    INPUT --> MPE
+    DOCTOR_UPLOAD -->|feedback| MPE
+    MPE -->|MPE Confidence Gate| ARLL
+    DOCTOR_QUERY -->|query| ARLL
+    ARLL --> GATE
+    GATE -->|YES| CSR
+    GATE -->|NO| WANNA
+    WANNA -->|retry| MPE
+    WANNA -->|exceeded max iter| ESCALATE
+    CSR --> REPORT
+    ESCALATE --> REPORT
+
+    classDef input    fill:#4A90D9,stroke:#2C5F8A,color:#fff,font-weight:bold
+    classDef phase    fill:#1E3A5F,stroke:#4A90D9,color:#fff,font-weight:bold
+    classDef gate     fill:#D4A017,stroke:#8B6914,color:#fff,font-weight:bold
+    classDef loop     fill:#C0392B,stroke:#7B241C,color:#fff,font-weight:bold
+    classDef escalate fill:#E74C3C,stroke:#C0392B,color:#fff,font-weight:bold
+    classDef hitl     fill:#27AE60,stroke:#1E8449,color:#fff,font-weight:bold
+    classDef output   fill:#8E44AD,stroke:#6C3483,color:#fff,font-weight:bold
 ```
 
 ### The Three-Phase Pipeline
