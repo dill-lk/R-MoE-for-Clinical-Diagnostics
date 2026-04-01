@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use rmoe_core::{InferenceParams, RMoEError, RMoEResult};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use futures::StreamExt;
 
 use super::{ChatCompletionMessage, MessageContent, ProviderClient, ProviderConfig};
@@ -203,7 +203,7 @@ impl ProviderClient for OpenAIClient {
                         
                         // Process complete SSE lines
                         while let Some(pos) = buffer.find("\n\n") {
-                            let line = buffer[..pos].trim();
+                            let line = buffer[..pos].trim().to_string();
                             buffer = buffer[pos + 2..].to_string();
 
                             if line.starts_with("data: ") {

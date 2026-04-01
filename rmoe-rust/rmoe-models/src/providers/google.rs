@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use rmoe_core::{InferenceParams, RMoEError, RMoEResult};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::{ChatCompletionMessage, MessageContent, ContentPart, ProviderClient, ProviderConfig};
 

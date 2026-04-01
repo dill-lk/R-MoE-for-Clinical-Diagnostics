@@ -180,7 +180,7 @@ impl Default for KnowledgeBase {
 }
 
 /// Load clinical knowledge from files.
-pub fn load_clinical_knowledge(path: &str) -> Vec<Document> {
+pub fn load_clinical_knowledge(_path: &str) -> Vec<Document> {
     // Implementation would load from various formats
     vec![]
 }
