@@ -1,0 +1,31 @@
+[package]
+name = "rmoe-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Terminal User Interface for R-MoE clinical diagnostics"
+
+[[bin]]
+name = "rmoe-tui"
+path = "src/main.rs"
+
+[dependencies]
+rmoe-core.workspace = true
+rmoe-models.workspace = true
+rmoe-agents.workspace = true
+rmoe-router.workspace = true
+rmoe-memory.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+futures.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+# TUI dependencies
+ratatui = "0.26"
+crossterm = "0.27"
+tui-textarea = "0.4"

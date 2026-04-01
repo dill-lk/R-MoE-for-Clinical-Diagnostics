@@ -9,6 +9,7 @@ members = [
     "rmoe-api",
     "rmoe-cli",
     "rmoe-rag",
+    "rmoe-tui",
 ]
 
 [workspace.package]
