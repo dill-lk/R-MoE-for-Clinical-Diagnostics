@@ -4,7 +4,6 @@
 //! All structures support serialization for audit trails and API responses.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 

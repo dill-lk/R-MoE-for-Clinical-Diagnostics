@@ -9,6 +9,7 @@ description = "Core types, traits, and engine for R-MoE framework"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
