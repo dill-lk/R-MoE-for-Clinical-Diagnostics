@@ -1,0 +1,17 @@
+[package]
+name = "rmoe-rag"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Vector RAG (Retrieval-Augmented Generation) engine for R-MoE"
+
+[dependencies]
+rmoe-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+regex.workspace = true

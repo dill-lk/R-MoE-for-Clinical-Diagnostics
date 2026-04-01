@@ -1,0 +1,20 @@
+[package]
+name = "rmoe-router"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "MoE routing logic for R-MoE framework"
+
+[dependencies]
+rmoe-core.workspace = true
+rmoe-models.workspace = true
+rmoe-agents.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+futures.workspace = true
+tracing.workspace = true

@@ -1,0 +1,83 @@
+[workspace]
+resolver = "2"
+members = [
+    "rmoe-core",
+    "rmoe-models",
+    "rmoe-agents",
+    "rmoe-router",
+    "rmoe-memory",
+    "rmoe-api",
+    "rmoe-cli",
+    "rmoe-rag",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["R-MoE Research Team"]
+license = "MIT"
+repository = "https://github.com/rmoe-framework/rmoe-rust"
+description = "Recursive Multi-Agent Mixture-of-Experts (R-MoE) Framework"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# Web server
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config
+config = "0.14"
+toml = "0.8"
+
+# Internal crates
+rmoe-core = { path = "rmoe-core" }
+rmoe-models = { path = "rmoe-models" }
+rmoe-agents = { path = "rmoe-agents" }
+rmoe-router = { path = "rmoe-router" }
+rmoe-memory = { path = "rmoe-memory" }
+rmoe-api = { path = "rmoe-api" }
+rmoe-rag = { path = "rmoe-rag" }
+
+# Terminal UI
+crossterm = "0.27"
+indicatif = "0.17"
+console = "0.15"
+colored = "2.1"
+
+# Regex
+regex = "1.10"
+
+# Base64
+base64 = "0.21"
+
+# Image handling
+image = "0.24"
