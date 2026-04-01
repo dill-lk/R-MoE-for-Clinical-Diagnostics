@@ -6,7 +6,7 @@
 
 use crate::models::*;
 use crate::config::RMoEConfig;
-use crate::error::{RMoEError, RMoEResult};
+use crate::error::RMoEResult;
 
 use std::time::Instant;
 use tracing::{info, warn, debug, instrument};
