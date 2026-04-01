@@ -399,7 +399,7 @@ async fn chat_interactive(args: ChatArgs, verbose: bool) -> Result<()> {
 }
 
 async fn run_diagnostic(args: DiagnoseArgs, verbose: bool) -> Result<()> {
-    use rmoe_core::{DiagnosticEngine, WannaConfig, InferenceParams};
+    use rmoe_core::{DiagnosticEngine, InferenceParams};
     use rmoe_models::providers::*;
     use rmoe_agents::{MPEAgent, ARLLAgent, CSRAgent};
 

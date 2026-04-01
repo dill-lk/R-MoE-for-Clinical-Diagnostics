@@ -21,7 +21,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             Constraint::Length(20),  // Sidebar
             Constraint::Min(60),     // Main content
         ])
-        .split(f.area());
+        .split(f.size());
 
     draw_sidebar(f, app, chunks[0]);
     draw_main_content(f, app, chunks[1]);
@@ -263,10 +263,10 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
 
     // Show cursor in input
     if app.focus == Focus::Input {
-        f.set_cursor_position((
+        f.set_cursor(
             chunks[1].x + app.chat_input.len() as u16 + 1,
             chunks[1].y + 1,
-        ));
+        );
     }
 
     // Status
@@ -300,10 +300,10 @@ fn draw_diagnose(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, chunks[0]);
 
     if app.focus == Focus::Input {
-        f.set_cursor_position((
+        f.set_cursor(
             chunks[0].x + app.symptoms_input.len() as u16 + 1,
             chunks[0].y + 1,
-        ));
+        );
     }
 
     // Progress

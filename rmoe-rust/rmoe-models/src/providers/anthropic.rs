@@ -222,13 +222,12 @@ impl ProviderClient for AnthropicClient {
             RMoEError::ParseError(format!("Failed to parse Anthropic response: {}", e))
         })?;
 
-        body.content
+        Ok(body.content
             .iter()
             .filter(|c| c.content_type == "text")
             .filter_map(|c| c.text.clone())
             .collect::<Vec<_>>()
-            .join("")
-            .into()
+            .join(""))
     }
 
     async fn chat_completion_stream(
@@ -252,7 +251,7 @@ impl ProviderClient for AnthropicClient {
                         buffer.push_str(&String::from_utf8_lossy(&bytes));
                         
                         while let Some(pos) = buffer.find("\n\n") {
-                            let line = buffer[..pos].trim();
+                            let line = buffer[..pos].trim().to_string();
                             buffer = buffer[pos + 2..].to_string();
 
                             if line.starts_with("data: ") {

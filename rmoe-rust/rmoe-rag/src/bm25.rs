@@ -1,6 +1,6 @@
 //! BM25 (Best Matching 25) algorithm implementation.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// BM25 index for keyword search.
 pub struct BM25Index {

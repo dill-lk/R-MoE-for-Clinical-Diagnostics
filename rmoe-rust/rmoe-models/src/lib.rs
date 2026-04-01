@@ -18,5 +18,5 @@ pub mod api;
 pub mod providers;
 
 pub use gguf::*;
-pub use api::*;
+pub use api::ApiBackend;
 pub use providers::*;

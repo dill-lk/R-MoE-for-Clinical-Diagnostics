@@ -8,8 +8,6 @@
 //! - Context compression
 //! - Memory-efficient token management
 
-use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 
 pub mod conversation;

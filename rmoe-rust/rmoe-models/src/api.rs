@@ -11,7 +11,7 @@ use rmoe_core::{
     TextModel, ChatModel,
 };
 use serde::{Deserialize, Serialize};
-use tracing::{info, debug, warn};
+use tracing::debug;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  OpenAI Client
@@ -454,8 +454,8 @@ impl ApiBackend {
 
     pub fn name(&self) -> &str {
         match self {
-            Self::OpenAI(c) => c.name(),
-            Self::Anthropic(c) => c.name(),
+            Self::OpenAI(c) => TextModel::name(c),
+            Self::Anthropic(c) => TextModel::name(c),
         }
     }
 }

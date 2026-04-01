@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use rmoe_core::{InferenceParams, RMoEError, RMoEResult};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
-use futures::StreamExt;
 
 use super::{ChatCompletionMessage, MessageContent, ProviderClient, ProviderConfig};
 
